@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "Tama",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Tama sits on your authenticated tabs, streams ambient activity to the local daemon, and surfaces active listeners as you work. Nothing leaves your machine.",
   "permissions": [
     "tabs",

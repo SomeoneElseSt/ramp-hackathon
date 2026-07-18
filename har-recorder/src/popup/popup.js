@@ -43,10 +43,10 @@ const H = 16;
 const LCD = "#9bbc0f";
 const INK = "#14300f";
 const LABEL = {
-  sleeping: "sleeping",
-  watching: "watching",
+  sleeping: "asleep · 0 model calls",
+  watching: "watching this tab",
   happy: "new event",
-  distress: "failure detected",
+  distress: "capture error",
   attention: "needs approval",
 };
 

@@ -11,7 +11,7 @@ body{
 }
 
 .pet{
-  width:120px;padding:10px 10px 12px;border-radius:26px 26px 22px 22px;
+  width:120px;padding:10px 10px 12px;border-radius:28px 28px 24px 24px;
   background:linear-gradient(160deg,#ffa8cd,#e8629b 72%);
   box-shadow:inset 0 -6px 12px rgba(0,0,0,.22),inset 0 5px 10px rgba(255,255,255,.45),
     0 6px 18px rgba(0,0,0,.28);
