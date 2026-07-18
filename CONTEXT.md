@@ -167,10 +167,11 @@ candidate identity (request-URL stamp fix landed).
 - [x] **Plan locked:** extension = modular harness; LinkedIn first proof module
 - [x] Harness: `IntegrationModule` + linkedin proof → open/focus tab on `watch`
 - [x] Daemon LinkedIn defaults so `create_listener` always ships `pageUrl`
+- [x] Popup: Tama ambient UI (daemon + listeners; capture demoted)
+- [x] **Live operate path works:** `create_listener` → watch → open messaging; extension reconnects as recorder
 
 ### Next
-- [x] Popup: Tama ambient UI (daemon + listeners; capture demoted)
-- [ ] Live E2E: `create_listener` → LinkedIn tab → ambient → `wait_for_event` on DM
+- [ ] Live DM wake test with user: ambient ON + `wait_for_event` on real LinkedIn message
 - [ ] Second module only when needed (same harness interface)
 - [ ] Popup: candidate shortlist / propose-workflow surface
 
