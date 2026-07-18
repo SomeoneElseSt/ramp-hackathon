@@ -202,6 +202,8 @@ candidate identity (request-URL stamp fix landed).
 
 Prod = latest `master` (tag `v0.4.2` matches `har-recorder` manifest).
 
+**Human-facing install + Codex paste prompt:** [`INSTALL.md`](./INSTALL.md).
+
 ```bash
 git pull --rebase origin master
 cd daemon && npm install && npm run dev
@@ -212,7 +214,8 @@ cd daemon && npm run test:ingest && npm run test:tama && npm run test:control
 ```
 
 ### Manual: MCP → open LinkedIn tab (target proof)
-1. Load unpacked `har-recorder/`, daemon `npm run dev`.
+1. Load unpacked `har-recorder/`, daemon via MCP or `npm run dev`.
 2. Agent: `create_listener({ intent: "new LinkedIn messages" })`.
 3. Extension receives `{kind:"watch"}`, opens/attaches messaging URL in background, starts ambient.
 4. Agent: prolonged `wait_for_event({ subId })` loop → wakes on each extracted DM.
+5. Full recipe + troubleshooting: `INSTALL.md`.

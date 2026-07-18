@@ -192,7 +192,10 @@ npm run dev
 
 ### 4. Point an agent at it
 
-Add the Tama MCP server to your MCP client (Codex / Cursor / etc.), then:
+**Full install + Codex paste prompt:** [`INSTALL.md`](./INSTALL.md)
+(MCP JSON/TOML for Cursor and Codex, latency tips, troubleshooting).
+
+Short path — add Tama MCP (`cwd` → `daemon/`), then:
 
 ```
 create_listener({ intent: "new LinkedIn messages" })  → { subId }
@@ -200,7 +203,6 @@ wait_for_event({ subId })   // blocks until a new DM arrives
 ```
 
 (`subscribe` is still supported as the CONTRACT alias.)
-
 ### Offline mode (no daemon, no agent)
 
 Run the perception getter over an exported trace to see exactly what a listener would fire on:

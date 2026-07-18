@@ -3,6 +3,7 @@
 The live layer: WebSocket bridge + organic endpoint discovery + general
 perception + **Tama MCP** (single connection any agent taps). Built to
 `../CONTRACT.md`. See `../CONTEXT.md` for the build plan.
+**Install + LinkedIn DM recipe:** [`../INSTALL.md`](../INSTALL.md).
 
 ```
 har-recorder  ──WS──▶  bridge.ts ──▶ perceive.ts ──▶ semantic events
@@ -26,7 +27,8 @@ har-recorder  ──WS──▶  bridge.ts ──▶ perceive.ts ──▶ seman
 - **endpoints.ts** + **catalog.ts** — Unbrowse-style noise filter; API-shaped
   candidates become listenable capabilities as the user browses.
 - **perceive.ts** — incremental perception, listener hub, discovery every N events;
-  emits watch/unwatch for the bridge.
+  emits watch/unwatch for the bridge. Listeners watermark at arm (`sinceTs`) —
+  event-forward only, not a history scrape.
 - **extract.ts** — site-agnostic message extraction (+ budgeted OpenAI fallback).
 - **intent.ts** — NL → keywords; setup-time OpenAI refine against captured candidates.
 - **workflows.ts** — heuristic workflow / listener recommendations.
@@ -41,6 +43,9 @@ npm install
 npm run dev            # WS bridge on ws://localhost:8787 + MCP over stdio
 ```
 
+When Cursor/Codex launches this via MCP config, **that same process** owns `:8787`.
+Do not also run `npm run dev` in parallel (port conflict).
+
 `OPENAI_API_KEY` (repo-root `.env`) enables the model-assisted extraction
 fallback. Without it, the deterministic heuristic path still works.
 
@@ -53,24 +58,65 @@ npm run test:tama       # Tama hub: discovery → list → create → wait → r
 npm run test:control    # daemon → recorder watch/unwatch/listeners push
 ```
 
-## Use from an MCP client
+## MCP config (Cursor + Codex)
 
-```jsonc
+Replace `/ABS/PATH/to/ramp-hackathon` with your absolute clone path.
+
+### Cursor (`.cursor/mcp.json` or Settings → MCP)
+
+```json
 {
   "mcpServers": {
     "tama": {
       "command": "npx",
       "args": ["tsx", "src/index.ts"],
-      "cwd": "/absolute/path/to/ramp-hackathon/daemon"
+      "cwd": "/ABS/PATH/to/ramp-hackathon/daemon"
     }
   }
 }
 ```
 
+### Codex (`~/.codex/config.toml`)
+
+```toml
+[mcp_servers.tama]
+command = "npx"
+args = ["tsx", "src/index.ts"]
+cwd = "/ABS/PATH/to/ramp-hackathon/daemon"
+tool_timeout_sec = 3600
+startup_timeout_sec = 20
+enabled = true
 ```
-list_listeners()                              → { active, capabilities }
-create_listener({ intent: "new messages" })   → { subId }
-wait_for_event({ subId })                     // blocks until a real event
-propose_workflows()                           → recommendations
+
+`tool_timeout_sec` must be high: `wait_for_event` blocks until a real DM.
+Codex’s default (~60s) will abort the wait early.
+
+## Use from an agent (LinkedIn DM)
+
+```
+list_listeners()
+create_listener({ intent: "new LinkedIn messages" })  → { subId, pageUrl, … }
+wait_for_event({ subId })   // blocks; returns semantic event; re-call to wait again
 remove_listener({ subId })
 ```
+
+Resolved semantic event shape (CONTRACT §2):
+
+```json
+{
+  "type": "message.received",
+  "source": "linkedin",
+  "ts": 1784341685706,
+  "from": { "name": "…", "profileId": "…" },
+  "to":   { "name": "You", "profileId": "…" },
+  "conversationId": "urn:li:msg_conversation:…",
+  "text": "Okay",
+  "evidence": ["e0kf3a1"]
+}
+```
+
+**Latency:** usually sub-second after LinkedIn’s response reaches the extension.
+Keep ambient **Sit** on messaging; send a **new** DM after arming (watermark
+ignores history). Do not cancel `wait_for_event` while waiting.
+
+Copy-paste Codex prompt + troubleshooting: [`../INSTALL.md`](../INSTALL.md).
