@@ -76,34 +76,50 @@ async function main(): Promise<void> {
     `[ops] prolonged wait_for_event(${created.subId}) — looping until killed; send LinkedIn DMs`,
   );
 
-  // Stay up: re-arm wait_for_event after every wake. Listener remains registered.
+  // Stay up: re-arm wait_for_event after every wake (and on transient errors).
+  // Listener remains registered; MCP stdio session stays open for this process.
   for (;;) {
     console.log(`[ops] waiting… (wakes so far: ${wakeCount})`);
-    const result = await client.callTool(
-      { name: "wait_for_event", arguments: { subId: created.subId } },
-      undefined,
-      { timeout: WAIT_TIMEOUT_MS },
-    );
-    wakeCount += 1;
-    const payload = textOf(result);
-    console.log(`[ops] WAKE #${wakeCount} — wait_for_event returned:`);
-    console.log(payload);
     try {
-      console.log("[ops] semantic:", JSON.stringify(JSON.parse(payload), null, 2));
-    } catch {
-      /* raw text */
+      const result = await client.callTool(
+        { name: "wait_for_event", arguments: { subId: created.subId } },
+        undefined,
+        { timeout: WAIT_TIMEOUT_MS },
+      );
+      wakeCount += 1;
+      const payload = textOf(result);
+      console.log(`[ops] WAKE #${wakeCount} — wait_for_event returned:`);
+      console.log(payload);
+      try {
+        console.log("[ops] semantic:", JSON.stringify(JSON.parse(payload), null, 2));
+      } catch {
+        /* raw text */
+      }
+      writeArmed({
+        at: new Date().toISOString(),
+        subId: created.subId,
+        pageUrl: created.pageUrl,
+        label: created.label,
+        mode: "prolonged",
+        wakeCount,
+        lastWakeAt: new Date().toISOString(),
+        note: "LISTENING_ARMED — prolonged bg listen; re-armed after wake; send more DMs anytime",
+      });
+      console.log(`[ops] re-armed — listening again (total wakes: ${wakeCount})`);
+    } catch (err) {
+      console.error("[ops] wait_for_event failed — re-arming in 2s:", err);
+      writeArmed({
+        at: new Date().toISOString(),
+        subId: created.subId,
+        pageUrl: created.pageUrl,
+        label: created.label,
+        mode: "prolonged",
+        wakeCount,
+        note: "LISTENING_ARMED — wait failed; re-arming; listener stays registered",
+        lastError: String(err),
+      });
+      await sleep(2000);
     }
-    writeArmed({
-      at: new Date().toISOString(),
-      subId: created.subId,
-      pageUrl: created.pageUrl,
-      label: created.label,
-      mode: "prolonged",
-      wakeCount,
-      lastWakeAt: new Date().toISOString(),
-      note: "LISTENING_ARMED — prolonged bg listen; re-armed after wake; send more DMs anytime",
-    });
-    console.log(`[ops] re-armed — listening again (total wakes: ${wakeCount})`);
   }
 }
 

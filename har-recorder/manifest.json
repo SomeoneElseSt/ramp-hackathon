@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "116",
   "name": "Tama",
   "version": "0.3.0",
   "description": "Tama sits on your authenticated tabs, streams ambient activity to the local daemon, and surfaces active listeners as you work. Nothing leaves your machine.",
@@ -8,7 +9,8 @@
     "storage",
     "downloads",
     "scripting",
-    "webNavigation"
+    "webNavigation",
+    "alarms"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

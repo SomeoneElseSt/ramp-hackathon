@@ -20,15 +20,28 @@ const POLL_INTERVAL_MS = Number(process.env.REFLEX_POLL_INTERVAL_MS ?? 60_000);
 const viewers = new Set<WebSocket>();
 const recorders = new Set<WebSocket>();
 
+const WS_PING_MS = Number(process.env.REFLEX_WS_PING_MS ?? 25_000);
+
 export function startBridge(): void {
+  // Bridge stays up for the process lifetime — do not tear down recorders or
+  // listeners when an MCP wait_for_event returns; only remove_listener / unwatch.
   const wss = new WebSocketServer({ port: WS_PORT });
 
   wss.on("connection", (socket) => {
     let role: "recorder" | "viewer" | null = null;
 
+    // Protocol-level ping keeps NAT / idle proxies from dropping long watches.
+    const pingTimer = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) socket.ping();
+      else clearInterval(pingTimer);
+    }, WS_PING_MS);
+
     socket.on("message", async (raw) => {
       const msg = parse(raw.toString());
       if (!msg) return;
+
+      // Extension keepalive (Chrome SW idle reset) — not an activity event.
+      if (isPing(msg)) return;
 
       // First message must be the role handshake.
       if (role === null && isRole(msg)) {
@@ -37,7 +50,7 @@ export function startBridge(): void {
           viewers.add(socket);
         } else {
           recorders.add(socket);
-          // Sync current watches so a late-connecting extension catches up.
+          // Sync current watches so a late-connecting / reconnected extension catches up.
           sendControl(socket, {
             kind: "listeners",
             payload: { active: perceiver.listWatches() },
@@ -52,10 +65,13 @@ export function startBridge(): void {
     });
 
     socket.on("close", () => {
+      clearInterval(pingTimer);
       viewers.delete(socket);
       recorders.delete(socket);
+      // Recorders leaving does NOT remove listeners — MCP / catalog persists.
     });
     socket.on("error", () => {
+      clearInterval(pingTimer);
       viewers.delete(socket);
       recorders.delete(socket);
     });
@@ -123,6 +139,10 @@ function isRole(msg: unknown): msg is RoleMessage {
     typeof msg === "object" &&
     ((msg as RoleMessage).role === "recorder" || (msg as RoleMessage).role === "viewer")
   );
+}
+
+function isPing(msg: unknown): boolean {
+  return !!msg && typeof msg === "object" && (msg as { type?: unknown }).type === "ping";
 }
 
 function parse(text: string): unknown {

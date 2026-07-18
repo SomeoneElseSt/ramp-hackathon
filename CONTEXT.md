@@ -170,6 +170,7 @@ candidate identity (request-URL stamp fix landed).
 - [x] Popup: Tama ambient UI (daemon + listeners; capture demoted)
 - [x] **Live operate path works:** `create_listener` → watch → open messaging; extension reconnects as recorder
 - [x] Prolonged bg listen: `ops-listen` loops `wait_for_event`; watch never steals focus
+- [x] Connection lifecycle: WS keepalive+reconnect while watch; MCP wait cycles keep listeners; idle only when both gone
 
 ### Next
 - [ ] Live DM wake test with user: ambient ON + prolonged `wait_for_event` on real LinkedIn message
@@ -189,6 +190,7 @@ candidate identity (request-URL stamp fix landed).
 ## Key facts
 
 - Port **8787** frozen. MCP logs → **stderr**.
+- Connection lifecycle: extension↔daemon WS stays live while watch/ambient (20s ping + reconnect; alarm backup); MCP stdio stays until client disconnect; listeners persist across `wait_for_event` cycles — idle only when both gone (or explicit unwatch/remove). Reload unpacked `har-recorder/` after pull.
 - Activity `{ id, type, ts, tabId, url, data }`; semantic `{ type, from, text, evidence[] }`.
 - Redaction OFF (MVP) for bodies — filter **volume**, don’t strip signal yet.
 - One extension: `har-recorder/`. Modules: `har-recorder/src/integrations/`.

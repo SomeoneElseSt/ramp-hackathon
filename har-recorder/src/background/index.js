@@ -47,13 +47,24 @@ const activeWatches = new Map();
 // a tab in background (no focus steal) via the integration harness.
 const DAEMON_URL = "ws://localhost:8787";
 
+// Keep daemon↔extension WS live while ambient/watch is on (Chrome 116+:
+// WS message exchange every ~20s resets the SW idle timer). Reconnect with
+// backoff forever; late connect gets kind:"listeners" resync from the bridge.
+const KEEP_ALIVE_MS = 20_000;
+const KEEP_ALIVE_ALARM = "tama-daemon-keepalive";
+
 function createDaemonClient(url, { onControl, onStatus } = {}) {
   let socket = null;
   let reconnectTimer = null;
+  let keepAliveTimer = null;
+  let backoffMs = 1000;
   const queue = [];
   const MAX_QUEUE = 2000;
 
   function connect() {
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
     try {
       socket = new WebSocket(url);
     } catch (_) {
@@ -61,8 +72,10 @@ function createDaemonClient(url, { onControl, onStatus } = {}) {
       return scheduleReconnect();
     }
     socket.addEventListener("open", () => {
+      backoffMs = 1000;
       try { socket.send(JSON.stringify({ role: "recorder" })); } catch (_) {}
       flush();
+      startKeepAlive();
       onStatus?.(true);
     });
     socket.addEventListener("message", (ev) => {
@@ -74,6 +87,7 @@ function createDaemonClient(url, { onControl, onStatus } = {}) {
       } catch (_) {}
     });
     socket.addEventListener("close", () => {
+      stopKeepAlive();
       onStatus?.(false);
       scheduleReconnect();
     });
@@ -81,7 +95,27 @@ function createDaemonClient(url, { onControl, onStatus } = {}) {
   }
   function scheduleReconnect() {
     if (reconnectTimer) return;
-    reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 1000);
+    const delay = backoffMs;
+    backoffMs = Math.min(backoffMs * 2, 15_000);
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, delay);
+  }
+  function startKeepAlive() {
+    stopKeepAlive();
+    // Chrome 116+: exchanging WS messages within 30s keeps the SW (and socket) alive.
+    keepAliveTimer = setInterval(() => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        stopKeepAlive();
+        scheduleReconnect();
+        return;
+      }
+      try { socket.send(JSON.stringify({ type: "ping", ts: Date.now() })); } catch (_) {}
+    }, KEEP_ALIVE_MS);
+  }
+  function stopKeepAlive() {
+    if (keepAliveTimer) {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+    }
   }
   function flush() {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
@@ -93,12 +127,16 @@ function createDaemonClient(url, { onControl, onStatus } = {}) {
     connected() {
       return !!(socket && socket.readyState === WebSocket.OPEN);
     },
+    ensureConnected() {
+      connect();
+    },
     push(ev) {
       if (socket && socket.readyState === WebSocket.OPEN) {
         try { socket.send(JSON.stringify(ev)); return; } catch (_) {}
       }
       queue.push(ev);
       if (queue.length > MAX_QUEUE) queue.shift();
+      connect();
     },
   };
 }
@@ -228,7 +266,25 @@ function updateListeningBadge() {
       });
     }
   } catch (_) {}
+  syncKeepAliveAlarm();
 }
+
+/** Alarm backup so SW wakes if setInterval heartbeat was cleared after suspend. */
+function syncKeepAliveAlarm() {
+  const needLive = recording || activeWatches.size > 0;
+  try {
+    if (needLive) {
+      chrome.alarms.create(KEEP_ALIVE_ALARM, { periodInMinutes: 0.5 }); // ~30s floor in Chrome
+    } else {
+      chrome.alarms.clear(KEEP_ALIVE_ALARM);
+    }
+  } catch (_) {}
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== KEEP_ALIVE_ALARM) return;
+  daemon.ensureConnected();
+});
 
 // ---- storage sink (redaction already applied in normalize) -----------------
 async function store(ev) {
@@ -364,6 +420,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await setMeta("startedAt", Date.now());
         await setMeta("recording", true);
         await tabs.start(scope);
+        syncKeepAliveAlarm();
+        daemon.ensureConnected();
         broadcast();
         sendResponse({ ok: true, scope });
         break;
@@ -377,6 +435,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.query({}, (all) => {
           for (const t of all) chrome.tabs.sendMessage(t.id, { type: "wf-stop" }).catch(() => {});
         });
+        syncKeepAliveAlarm();
         broadcast();
         sendResponse({ ok: true });
         break;
@@ -430,13 +489,15 @@ function buildArtifacts(events) {
 }
 
 // If the worker restarts mid-recording, restore the flag (attachments are
-// re-established lazily as events arrive / tabs update).
+// re-established lazily as events arrive / tabs update). Daemon reconnect
+// receives kind:"listeners" and re-arms watches via handleRecorderControl.
 (async () => {
-  const started = await getMeta("startedAt", null);
   const scope = await getMeta("scope", null);
   const wasRecording = await getMeta("recording", false);
   if (wasRecording && scope) {
     recording = true;
     await tabs.start(normalizeScope(scope)).catch(() => {});
   }
+  syncKeepAliveAlarm();
+  daemon.ensureConnected();
 })();
