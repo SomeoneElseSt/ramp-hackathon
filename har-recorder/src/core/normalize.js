@@ -59,17 +59,9 @@ export function networkResponse(idFn, params, ctx, body = null, opts = {}) {
     const raw = String(body.text);
     const truncated = raw.length > limit;
     const clipped = truncated ? raw.slice(0, limit) : raw;
-    let redacted;
-    if (/json/i.test(mime)) {
-      try {
-        redacted = JSON.stringify(redactValue(JSON.parse(clipped)));
-      } catch {
-        redacted = redactString(clipped);
-      }
-    } else {
-      redacted = redactString(clipped);
-    }
-    content = { size: raw.length, mimeType: mime, text: redacted, truncated };
+    // MVP: keep complete response bodies (no redaction) so perception has the
+    // full network request to work with.
+    content = { size: raw.length, mimeType: mime, text: clipped, truncated };
   }
   return makeEvent({
     id: idFn(),
@@ -95,13 +87,7 @@ export function webSocketFrame(idFn, params, ctx, opts = {}) {
   const limit = opts.frameLimit ?? 4096;
   const raw = params.payload != null ? String(params.payload) : "";
   const truncated = raw.length > limit;
-  const clipped = truncated ? raw.slice(0, limit) : raw;
-  let payload;
-  try {
-    payload = JSON.stringify(redactValue(JSON.parse(clipped)));
-  } catch {
-    payload = redactString(clipped);
-  }
+  const payload = truncated ? raw.slice(0, limit) : raw; // MVP: complete frame, no redaction
   return makeEvent({
     id: idFn(),
     type:
@@ -129,13 +115,7 @@ export function sseMessage(idFn, params, ctx, opts = {}) {
   const limit = opts.frameLimit ?? 8192;
   const raw = params.data != null ? String(params.data) : "";
   const truncated = raw.length > limit;
-  const clipped = truncated ? raw.slice(0, limit) : raw;
-  let payload;
-  try {
-    payload = JSON.stringify(redactValue(JSON.parse(clipped)));
-  } catch {
-    payload = redactString(clipped);
-  }
+  const payload = truncated ? raw.slice(0, limit) : raw; // MVP: complete frame, no redaction
   return makeEvent({
     id: idFn(),
     type: EventType.SSE_MESSAGE,
