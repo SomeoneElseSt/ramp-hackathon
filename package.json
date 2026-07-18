@@ -1,0 +1,15 @@
+{
+  "name": "browser-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Tamagotchi browser pet that lets the web call your agents back.",
+  "scripts": {
+    "dev:server": "pnpm --filter @companion/server dev",
+    "dev:extension": "pnpm --filter @companion/extension dev",
+    "build:extension": "pnpm --filter @companion/extension build",
+    "build:mcp": "pnpm --filter @companion/mcp build",
+    "build:shared": "pnpm --filter @companion/shared build",
+    "build": "pnpm -r build"
+  },
+  "packageManager": "pnpm@10.25.0"
+}
