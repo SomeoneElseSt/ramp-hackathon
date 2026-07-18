@@ -79,6 +79,11 @@ class Perceiver {
       this.deliver(semantic);
       this.emitter.emit("semantic", semantic);
     }
+    if (extracted.length > 0) {
+      log(
+        `extract raw=${event.id} got=${extracted.length} emit=${fresh.length} dedup=${extracted.length - fresh.length}`,
+      );
+    }
     return fresh;
   }
 
@@ -159,16 +164,17 @@ class Perceiver {
   removeListener(subId: string): boolean {
     const sub = this.subscriptions.get(subId);
     if (!sub) return false;
-    for (const waiter of sub.waiters) {
-      waiter({
-        type: "listener.removed",
-        source: "tama",
-        ts: Date.now(),
-        from: { name: null, profileId: null },
-        text: `listener ${subId} removed`,
-        evidence: [],
-      });
-    }
+    const removed: SemanticEvent = {
+      type: "listener.removed",
+      source: "tama",
+      ts: Date.now(),
+      from: { name: null, profileId: null },
+      text: `listener ${subId} removed`,
+      evidence: [],
+    };
+    sub.pending.push(removed);
+    const waiting = sub.waiters.splice(0);
+    for (const notify of waiting) notify();
     this.subscriptions.delete(subId);
     log(`remove_listener ${subId}`);
     this.emitter.emit("unwatch", { subId });
@@ -193,11 +199,22 @@ class Perceiver {
   waitForEvent(subId: string): Promise<SemanticEvent> | null {
     const sub = this.subscriptions.get(subId);
     if (!sub) return null;
-    // Drop anything older than the arm watermark before waking.
     this.drainStalePending(sub);
-    const queued = sub.pending.shift();
-    if (queued) return Promise.resolve(queued);
-    return new Promise<SemanticEvent>((resolve) => sub.waiters.push(resolve));
+    if (sub.pending.length > 0) {
+      return Promise.resolve(sub.pending.shift()!);
+    }
+    // Notify-style waiters: events always queue in pending first. If the MCP
+    // client cancels wait_for_event, the DM stays in pending for the next call
+    // instead of vanishing into an abandoned Promise.
+    return new Promise<SemanticEvent>((resolve) => {
+      const onNotify = () => {
+        this.drainStalePending(sub);
+        const next = sub.pending.shift();
+        if (next) resolve(next);
+        else sub.waiters.push(onNotify);
+      };
+      sub.waiters.push(onNotify);
+    });
   }
 
   getListenerEvents(subId: string): SemanticEvent[] | null {
@@ -250,9 +267,12 @@ class Perceiver {
   private deliver(event: SemanticEvent): void {
     for (const sub of this.subscriptions.values()) {
       if (!this.matches(sub, event)) continue;
-      const waiter = sub.waiters.shift();
-      if (waiter) waiter(event);
-      else sub.pending.push(event);
+      sub.pending.push(event);
+      log(
+        `notice ${sub.subId}: ${event.type} from=${event.from?.name ?? "?"} text="${(event.text || "").slice(0, 80)}"`,
+      );
+      const notify = sub.waiters.shift();
+      if (notify) notify();
     }
   }
 

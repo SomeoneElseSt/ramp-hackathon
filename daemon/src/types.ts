@@ -55,7 +55,8 @@ export interface Subscription {
   sinceTs: number;
   createdAt: number;
   pending: SemanticEvent[]; // matched-but-undelivered events (drained by wait/get_recent)
-  waiters: Array<(event: SemanticEvent) => void>;
+  /** Notify callbacks — events always land in pending first so cancelled waits don't drop DMs. */
+  waiters: Array<() => void>;
 }
 
 /** Snapshot pushed to the extension when a listener is created/removed. */
