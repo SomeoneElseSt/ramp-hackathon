@@ -45,15 +45,18 @@ page fires real traffic (fetch/XHR/WebSocket/SSE)
 
 ## Components & status
 
-### `daemon/` — live layer (WS bridge + perception + Tama MCP). ✅ BUILT
+### `daemon/` — live layer (WS bridge + perception + Tama MCP). ✅ LISTENER HUB
 Standalone Node/TS package (`npm install && npm run dev`). Owns `ws://localhost:8787`.
 - `bridge.ts` — recorder/viewer roles; broadcasts `{kind:semantic|raw|poll}`.
-- `perceive.ts` — incremental perception, dedup, waiter queue.
+- `perceive.ts` — incremental perception, listener hub, organic discovery every N events.
 - `extract.ts` — **general, site-agnostic** message extraction (no per-site code).
-- `intent.ts` — NL intent → endpoint keywords (+ setup-time OpenAI refine WIP).
-- `endpoints.ts` — Unbrowse-style noise filter + API-shaped candidate shortlist (WIP).
-- `server.ts` — MCP stdio (CONTRACT tools today; evolving into Tama listener hub).
-- Tests: `test/fake-recorder.ts`, `test/mcp-client.ts`, `test/capture-seam.mjs`.
+- `intent.ts` — NL intent → endpoint keywords (+ setup-time OpenAI refine).
+- `endpoints.ts` + `catalog.ts` — Unbrowse-style filter → capability catalog.
+- `workflows.ts` — heuristic workflow / listener recommendations.
+- `functionality.ts` — discovered source → human label.
+- `server.ts` — **Tama MCP**: create/list/get/remove listeners + propose_workflows
+  (+ CONTRACT aliases subscribe / wait_for_event / get_recent_events).
+- Tests: `test:recorder`, `test:mcp`, `test:tama` (discovery → create → wait → remove).
 
 ### `har-recorder/` — **the only browser extension**. ✅ CAPTURE→DAEMON WIRED
 Debugger-free capture (MAIN-world interceptor patches fetch/XHR/WS/SSE) +
@@ -74,43 +77,42 @@ Two 1-bit pixel pets. Viewer role wakes on `{kind:semantic}`, drains poller on
 
 Ordered. Stay on `har-recorder` + `daemon`. LinkedIn is proof-only.
 
-### 0. Cleanup — ✅ in progress / landing
+### 0. Cleanup — ✅ done
 - [x] Remove WXT `extension/`
 - [x] Move functionality labeler → `har-recorder/src/core/functionality.js`
-- [ ] Rewrite this file + `AGENTS.md` (this update)
+- [x] Rewrite this file + `AGENTS.md`
 - Keep `CONTRACT.md` shapes unchanged
 
-### 1. Tama MCP as the listener hub
+### 1. Tama MCP as the listener hub — ✅ done
 Evolve `daemon/src/server.ts` into pitch language without breaking CONTRACT:
 
 | Tool | Role |
 |------|------|
 | `create_listener` / `subscribe` | Agent or user asks to watch something (NL intent) |
-| `list_listeners` | What Tama currently knows how to watch (catalog + active) |
+| `list_listeners` | Active listeners + organically discovered capabilities |
 | `get_listener_events` / `wait_for_event` | Agents tap the **single** connection for fired events |
 | `remove_listener` | Drop a watch |
+| `propose_workflows` | Proactive recommendations from the observation stream |
 
-Backend: listeners + dedup in local daemon (hackathon: in-memory / light file).
+Backend: in-memory catalog (`catalog.ts`) + subscriptions in `perceive.ts`.
 Catalog entries come from **discovered sources**, not hardcoded site packs.
+Verified: `npm run test:tama` in `daemon/`.
 
-### 2. Organic discovery (extension → catalog)
+### 2. Organic discovery (extension → catalog) — ✅ daemon path done
 How support “auto keeps adding”:
 
 1. har-recorder captures the firehose (already).
-2. Unbrowse-style noise filter + API-shaped shortlist (`noise-patterns` / `endpoints`).
-3. Setup-time LLM (OpenAI mini) maps intent ↔ candidates **or** labels newly seen
-   surfaces as listenable functionalities.
-4. New capabilities appear in `list_listeners` for any agent on Tama MCP.
+2. Unbrowse-style noise filter + API-shaped shortlist (`endpoints.ts` / `noise-patterns.js`).
+3. Setup-time LLM (OpenAI mini) maps intent ↔ candidates when key present.
+4. New capabilities appear in `list_listeners` (discovery every N ingest events).
 
-Prove discovery + fire on **LinkedIn messaging** first only because the demo needs
-one real wake — machinery stays site-agnostic (`extract.ts`).
+Prove on LinkedIn-shaped traffic: `test/tama-hub.ts` discovers “New message”,
+creates listener, `wait_for_event` returns Raphael / Okay.
 
-### 3. Pet + workflow recommendations (same stream)
-- Pet states from semantic events (sleeping / watching / happy).
-- Condense recent activity → **recommend workflows** in pet/popup and optionally
-  as MCP proposals; approve → same `create_listener`.
-
-Discovery and workflow recs are two consumers of one observation stream.
+### 3. Pet + workflow recommendations (same stream) — ✅ MCP path; UI thin
+- [x] `propose_workflows` MCP tool (heuristic recommendations)
+- [ ] Pet overlay states on har-recorder popup (still open)
+- Approve recommendation → same `create_listener`
 
 ### Success bar
 1. One agent connects to **Tama MCP** once.

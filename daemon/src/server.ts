@@ -4,19 +4,21 @@ import { z } from "zod";
 import { perceiver } from "./perceive.js";
 import { log } from "./logger.js";
 
-// CONTRACT §3: the reactive MCP surface. subscribe (NL intent) → wait_for_event
-// (blocks on a real event) → get_recent_events (non-blocking drain).
+// Tama MCP — single connection any agent taps into.
+// CONTRACT §3 tools kept; pitch-language aliases added (create/list/get/remove).
 export async function startMcpServer(): Promise<void> {
-  const server = new McpServer({ name: "reflex", version: "0.1.0" });
+  const server = new McpServer({ name: "tama", version: "0.2.0" });
+
+  // ---- CONTRACT §3 (kept) -------------------------------------------------
 
   server.tool(
     "subscribe",
-    "Register interest in web events described in natural language (e.g. 'new messages'). Returns a subId used to wait for or drain events. Narrows which endpoints are inspected.",
+    "Register interest in web events described in natural language (e.g. 'new messages'). Returns a subId. Alias of create_listener.",
     { intent: z.string(), types: z.array(z.string()).optional() },
     async ({ intent, types }) => {
-      const subId = await perceiver.subscribe(intent, types);
+      const subId = await perceiver.createListener(intent, types);
       return text({ subId });
-    }
+    },
   );
 
   server.tool(
@@ -28,23 +30,77 @@ export async function startMcpServer(): Promise<void> {
       if (!pending) return errorText(`unknown subId: ${subId}`);
       const event = await pending;
       return text(event);
-    }
+    },
   );
 
   server.tool(
     "get_recent_events",
-    "Non-blocking drain of matched-but-undelivered events for a subscription.",
+    "Non-blocking drain of matched-but-undelivered events for a subscription. Alias of get_listener_events.",
     { subId: z.string() },
     async ({ subId }) => {
-      const events = perceiver.getRecentEvents(subId);
+      const events = perceiver.getListenerEvents(subId);
       if (events === null) return errorText(`unknown subId: ${subId}`);
       return text(events);
-    }
+    },
+  );
+
+  // ---- Tama listener hub aliases ------------------------------------------
+
+  server.tool(
+    "create_listener",
+    "Create a persistent listener from a natural-language intent. Compiles endpoint keywords from organically discovered traffic (setup-time only). Returns { subId }.",
+    { intent: z.string(), types: z.array(z.string()).optional() },
+    async ({ intent, types }) => {
+      const subId = await perceiver.createListener(intent, types);
+      return text({ subId });
+    },
+  );
+
+  server.tool(
+    "list_listeners",
+    "What Tama currently knows: active listeners agents created, plus organically discovered capabilities (listenable surfaces from browsing).",
+    {},
+    async () => {
+      return text(perceiver.listListeners());
+    },
+  );
+
+  server.tool(
+    "get_listener_events",
+    "Non-blocking drain of fired events for a listener (same as get_recent_events).",
+    { subId: z.string() },
+    async ({ subId }) => {
+      const events = perceiver.getListenerEvents(subId);
+      if (events === null) return errorText(`unknown subId: ${subId}`);
+      return text(events);
+    },
+  );
+
+  server.tool(
+    "remove_listener",
+    "Remove a listener by subId. Unblocks any waiting wait_for_event callers.",
+    { subId: z.string() },
+    async ({ subId }) => {
+      const ok = perceiver.removeListener(subId);
+      if (!ok) return errorText(`unknown subId: ${subId}`);
+      return text({ removed: subId });
+    },
+  );
+
+  server.tool(
+    "propose_workflows",
+    "Proactive recommendations from the same observation stream: suggested listeners and repeated workflows. Approve by calling create_listener with suggestedIntent.",
+    { limit: z.number().int().min(1).max(20).optional() },
+    async ({ limit }) => {
+      return text(perceiver.proposeWorkflows(limit ?? 5));
+    },
   );
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  log("MCP server connected over stdio (tools: subscribe, wait_for_event, get_recent_events)");
+  log(
+    "Tama MCP connected (tools: subscribe, create_listener, list_listeners, wait_for_event, get_listener_events, get_recent_events, remove_listener, propose_workflows)",
+  );
 }
 
 function text(value: unknown) {
