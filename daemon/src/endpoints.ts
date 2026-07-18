@@ -6,10 +6,10 @@
 import type { ActivityEvent } from "./types.js";
 
 const NOISE_HOSTS =
-  /(id5-sync\.com|btloader\.com|presage\.io|onetrust\.com|adsrvr\.org|googlesyndication\.com|adtrafficquality\.google|amazon-adsystem\.com|crazyegg\.com|challenges\.cloudflare\.com|google-analytics\.com|doubleclick\.net|gstatic\.com|accounts\.google\.com|login\.microsoftonline\.com|auth0\.com|cognito-idp\.|protechts\.net|demdex\.net|datadoghq\.com|fullstory\.com|launchdarkly\.com|intercom\.io|sentry\.io|segment\.io|amplitude\.com|mixpanel\.com|hotjar\.com|clarity\.ms|googletagmanager\.com|walletconnect\.com|cloudflareinsights\.com|fonts\.googleapis\.com|recaptcha|waa-pa\.|signaler-pa\.|ogads-pa\.|reddit\.com\/pixels?|pixel-config\.|dns-finder\.com|cookieconsentpub|firebase\.googleapis\.com|firebaseinstallations\.googleapis\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|apis\.google\.com|connect\.facebook\.net|bat\.bing\.com|static\.cloudflareinsights\.com|cdn\.mxpnl\.com|js\.hs-analytics\.net|snap\.licdn\.com|clc\.stackoverflow\.com|px\.ads|t\.co\/i|analytics\.|telemetry\.|stats\.)/i;
+  /(id5-sync\.com|btloader\.com|presage\.io|onetrust\.com|adsrvr\.org|googlesyndication\.com|adtrafficquality\.google|amazon-adsystem\.com|crazyegg\.com|challenges\.cloudflare\.com|google-analytics\.com|doubleclick\.net|gstatic\.com|accounts\.google\.com|login\.microsoftonline\.com|auth0\.com|cognito-idp\.|protechts\.net|demdex\.net|datadoghq\.com|fullstory\.com|launchdarkly\.com|intercom\.io|sentry\.io|segment\.io|amplitude\.com|mixpanel\.com|hotjar\.com|clarity\.ms|googletagmanager\.com|walletconnect\.com|cloudflareinsights\.com|fonts\.googleapis\.com|fonts\.gstatic|recaptcha|waa-pa\.|signaler-pa\.|ogads-pa\.|reddit\.com\/pixels?|pixel-config\.|dns-finder\.com|cookieconsentpub|firebase\.googleapis\.com|firebaseinstallations\.googleapis\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|apis\.google\.com|connect\.facebook\.net|bat\.bing\.com|static\.cloudflareinsights\.com|cdn\.mxpnl\.com|js\.hs-analytics\.net|snap\.licdn\.com|static\.licdn\.com|media\.licdn\.com|px\.ads\.linkedin|px\d*\.ads\.linkedin|googleadservices|clc\.stackoverflow\.com|px\.ads|t\.co\/i|analytics\.|telemetry\.|stats\.)/i;
 
 const NOISE_PATHS =
-  /\/(track|pixel|telemetry|beacon|csp-report|litms|demdex|analytics|protechts|collect|tr\/|gen_204|generate_204|log$|logging|heartbeat|metrics|consent|sodar|tag$|event$|events$|impression|pageview|click|__|adx\/|\/cm\/ttc|\/pfb$|_stm$|videoads\/|prerolls|phantom\/|controller-resources)/i;
+  /\/(track|pixel|telemetry|beacon|csp-report|litms|demdex|analytics|protechts|collect|tr\/|gen_204|generate_204|log$|logging|heartbeat|metrics|consent|sodar|tag$|event$|events$|impression|pageview|click|__|adx\/|\/cm\/ttc|\/pfb$|_stm$|videoads\/|prerolls|phantom\/|controller-resources|sensorCollect|tscp-serving)/i;
 
 const I18N_CONFIG_PATHS =
   /\/(i18n\/|locales\/|locale\/|translations?\/|l10n\/|lang\/[a-z]{2,5}\/|navigation\.json$|privacy[-_]compliance|privacy[-_]consent|consent[-_])/i;
@@ -17,8 +17,9 @@ const I18N_CONFIG_PATHS =
 const AUTH_CONFIG_PATHS =
   /\/(csrf_meta|logged_in_user|analytics_user_data|onboarding|geolocation|auth|login|logout|register|signup|session|webConfig|config\.json|manifest\.json|robots\.txt|sitemap|favicon|opensearch|service-worker|sw\.js)\b/i;
 
+/** Session / LinkedIn plumbing — looks like API, not listenable product data. */
 const SESSION_PLUMBING =
-  /(account\/settings|account\/multi|badge_count|DataSaverMode|permissionsState|email_phone_info|live_pipeline|user_flow|strato\/column|ces\/p2|IntercomStarter|getAltText|fleetline|FeatureHelper|VerifiedAvatar|ScheduledPromotion|DirectCall|DmSettings|PinnedTimeline)/i;
+  /(account\/settings|account\/multi|badge_count|DataSaverMode|permissionsState|email_phone_info|live_pipeline|user_flow|strato\/column|ces\/p2|IntercomStarter|getAltText|fleetline|FeatureHelper|VerifiedAvatar|ScheduledPromotion|DirectCall|DmSettings|PinnedTimeline|ClientConnectivityTracking|realtimeFrontendSubscriptions|realtimeFrontendTimestamp|MessagingBadge|SecondaryInbox|ConversationNudges|MessageDeliveryAcknowledgements|presenceStatuses|AwayStatus|AffiliatedMailboxes|PageMailbox|QuickReplies|SeenReceipts|MailboxCounts|LegoDashPageContents|MySettings|PremiumDash|OnboardingDash|GlobalAlerts|UpsellSlot|MessagingSettings|FeatureAccess|JobSeekerPreferences)/i;
 
 const STATIC_ASSET_PATTERNS =
   /\.(woff2?|ttf|eot|css|js|mjs|png|jpg|jpeg|gif|svg|ico|webp|avif|mp4|mp3|wav|riv|lottie|wasm)(\?|%3F|$)/i;
@@ -80,6 +81,7 @@ export function collectEndpointCandidates(
   events: ActivityEvent[],
   { limit = 40 } = {},
 ): EndpointCandidate[] {
+  // Prefer request URLs (real voyager paths). Responses may carry SPA page URLs.
   const byKey = new Map<string, EndpointCandidate>();
 
   for (const ev of events) {
@@ -90,15 +92,24 @@ export function collectEndpointCandidates(
     let method = typeof data.method === "string" ? data.method : "GET";
     let kind: string | null = null;
 
-    if (ev.type === "network.request" || ev.type === "network.response") {
+    if (ev.type === "network.request") {
+      if (!looksLikeApiUrl(url) && !/\/voyager\/api\/|\/realtime\/|\/graphql|\/api\//i.test(url)) {
+        continue;
+      }
+      kind = "http";
+    } else if (ev.type === "network.response") {
       const mime = typeof data.mimeType === "string" ? data.mimeType : "";
       const rt = typeof data.resourceType === "string" ? data.resourceType : "";
       const apiish =
         looksLikeApiUrl(url) ||
-        /json|graphql|event-stream/i.test(mime) ||
+        /\/voyager\/api\/|\/realtime\/|\/graphql|\/api\//i.test(url);
+      // Skip SPA-route responses for candidate keys — they pollute discovery.
+      if (!apiish) continue;
+      const fetchish =
+        /json|graphql|event-stream|linkedin\.normalized/i.test(mime) ||
         rt === "XHR" ||
         rt === "Fetch";
-      if (!apiish) continue;
+      if (!fetchish && !/\/voyager\/api\//i.test(url)) continue;
       kind = "http";
     } else if (ev.type === "websocket.received" || ev.type === "websocket.sent") {
       kind = "websocket";

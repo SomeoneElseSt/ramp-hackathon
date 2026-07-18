@@ -10,6 +10,7 @@ import {
   type ListenerSummary,
 } from "./catalog.js";
 import { recommendWorkflows, type WorkflowRecommendation } from "./workflows.js";
+import { shouldIngest } from "./ingest.js";
 import { log } from "./logger.js";
 import { describeSource } from "./functionality.js";
 
@@ -37,9 +38,15 @@ class Perceiver {
   private baselineKeywords = planForIntent("new messages").keywords;
   private sinceDiscover = 0;
 
-  counts = { raw: 0, extracted: 0, deduped: 0, emitted: 0, discovered: 0 };
+  counts = { raw: 0, extracted: 0, deduped: 0, emitted: 0, discovered: 0, dropped: 0 };
 
   async ingest(event: ActivityEvent): Promise<SemanticEvent[]> {
+    // Always-on brutal gate: LinkedIn HARs are mostly CDN/nav/plumbing slop.
+    if (!shouldIngest(event)) {
+      this.counts.dropped += 1;
+      return [];
+    }
+
     this.counts.raw += 1;
     this.raw.push(event);
     if (this.raw.length > RAW_BUFFER_CAP) this.raw.shift();

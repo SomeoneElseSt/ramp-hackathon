@@ -47,10 +47,27 @@ agent ──Tama MCP──▶ daemon (listeners + perception)
 
 | Path | Role | Status |
 |------|------|--------|
-| `daemon/` | WS bridge · perception · catalog · **Tama MCP** | ✅ Hub shipped (`test:tama`) |
+| `daemon/` | WS bridge · **always-on ingest gate** · perception · catalog · **Tama MCP** | ✅ Hub + control + brutal ingest (`test:tama`, `test:control`, `test:ingest`) |
 | `har-recorder/` | Only extension — capture + stream to daemon | ✅ Capture→daemon; 🚧 Tama UI + watch control |
 | `demo/` | Poller vs Tama pet viewer | ✅ Exists |
 | ~~`extension/`~~ | WXT | ❌ Deleted — do not revive |
+
+### Always-on ingest (LinkedIn slop)
+
+Daemon `ingest.ts` runs on every recorder event **before** buffer/perception:
+
+- **Drop:** CDN (`static.licdn`, `media.licdn`, gstatic), ads, document/asset mime,
+  empty images, Google search, presence/badge/nudge/Lego/premium plumbing,
+  non-API SPA routes without messaging JSON.
+- **Keep:** `/voyager/api/…` **requests** (real URLs — responses often mis-tagged
+  with the page URL) + JSON/`linkedin.normalized` **responses** whose body looks
+  messaging-shaped + WS/SSE realtime (non-plumbing).
+- Tuned on `~/Downloads/activity-trace-*.json`: **~10% keep** (820 → ~82).
+  `npm run test:ingest` in `daemon/`.
+
+**Known capture bug:** responses often carry `/messaging/thread/…` instead of the
+voyager URL; ingest compensates via request URLs + body heuristics. Fix the
+interceptor separately.
 
 ---
 
