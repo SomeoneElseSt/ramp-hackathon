@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Reflex daemon: WS bridge (recorder/viewer) + general perception + MCP surface.",
+  "description": "Tama daemon: WS bridge + organic discovery + perception + Tama MCP listener hub.",
   "bin": {
     "reflex-daemon": "dist/index.js"
   },
@@ -11,7 +11,10 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test:recorder": "tsx test/fake-recorder.ts"
+    "test:recorder": "tsx test/fake-recorder.ts",
+    "test:mcp": "tsx test/mcp-client.ts",
+    "test:tama": "tsx test/tama-hub.ts",
+    "test:control": "tsx test/recorder-control.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

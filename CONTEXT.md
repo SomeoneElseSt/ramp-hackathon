@@ -1,81 +1,188 @@
 # CONTEXT.md — shared orientation for agents
 
 Living notes on what this repo is, how the pieces fit, and what's done vs. next.
-**`CONTRACT.md` is the frozen source of truth for shapes/ports — this file is the map, not the law.** Update this file when you land something.
+**`CONTRACT.md` is the frozen source of truth for activity/semantic shapes and
+port `8787`.** This file is the map + build plan. Update it when you land something.
 
 Last updated: 2026-07-18.
 
 ---
 
-## What we're building — "reflex"
+## What we're building — Tama
 
-Give browser agents **reflexes instead of polling**. Instead of screenshotting a
-page every 60s to see if something changed, an agent **subscribes** to a page and
-gets **pinged the instant something happens**, over the network/DOM traffic the
-browser already emits. Entities (who sent what) are resolved *before* the agent
-sees them, so the downstream model spends ~0 tokens.
+Give browser agents **reflexes instead of polling**. An agent (or the user)
+describes what to watch; Tama finds the signal in the user's authenticated
+browser, runs a **deterministic** listener at zero model cost, and wakes the
+agent with entities already resolved.
 
-**The pipeline (this is the whole system):**
+**Product surface (locked):**
+
+- **Tama MCP** — one local MCP connection any agent taps into.
+- **Listener catalog grows organically** from captured traffic — not per-site
+  connector packs.
+- **Same extension** (`har-recorder/`) captures, discovers, and will show
+  “Tama is watching this tab” + open the right page when MCP creates a listener.
+- **LinkedIn** = first proof site for the demo, not a product lane.
+
+Idle path = zero model. Models only at setup / ambiguous extract / workflow
+propose / dispatched work.
 
 ```
-page fires real traffic (fetch/XHR/WebSocket/SSE)
-  → extension captures + normalizes it (full body, no redaction — MVP)
-  → pushes over ws://localhost:8787 as role "recorder"
-  → daemon buffers, perceives → resolved SEMANTIC events (sender+text joined)
-  → broadcasts {kind:semantic} to viewers (the Tamagotchi pet reacts)
-  → MCP wait_for_event() unblocks an agent in <1s
+agent ──Tama MCP──▶ daemon (listeners + perception)
+                         │
+                         │ RecorderControl: watch / unwatch / listeners
+                         ▼
+                   har-recorder (open pageUrl, watch endpoints, stream traffic)
+                         │
+                         │ role:recorder activity events (CONTRACT §1)
+                         ▼
+                   daemon perceives → semantic → wait_for_event unblocks
+                         +
+                   viewers get {kind:semantic|raw|poll} (demo pet)
 ```
 
 ---
 
 ## Components & status
 
-### `daemon/` — live layer (WS bridge + perception + MCP). ✅ BUILT & VERIFIED
-Standalone Node/TS package (`npm install && npm run dev`). Owns `ws://localhost:8787`.
-- `bridge.ts` — recorder/viewer roles; broadcasts `{kind:semantic|raw|poll}`; emits a baseline `poll` tick for the demo.
-- `perceive.ts` — incremental perception over the growing buffer, dedup by stable key, waiter queue behind the blocking primitive.
-- `extract.ts` — **general, site-agnostic** message extraction: walks any JSON body for message containers (id/sender + text in subtree), learns/resolves identities; budgeted OpenAI fallback to index unfamiliar shapes. **No per-site code.**
-- `intent.ts` — NL intent → endpoint keywords + event types (narrowing).
-- `identities.ts` — accumulates name↔id, resolves sender before the agent sees it.
-- `server.ts` — MCP stdio tools: `subscribe`, `wait_for_event` (blocks), `get_recent_events`.
-- Tests: `test/fake-recorder.ts`, `test/mcp-client.ts`, `test/capture-seam.mjs` (drives the REAL extension normalize.js → daemon).
+| Path | Role | Status |
+|------|------|--------|
+| `daemon/` | WS bridge · perception · catalog · **Tama MCP** | ✅ Hub shipped (`test:tama`) |
+| `har-recorder/` | Only extension — capture + stream to daemon | ✅ Capture→daemon; 🚧 Tama UI + watch control |
+| `demo/` | Poller vs Tama pet viewer | ✅ Exists |
+| ~~`extension/`~~ | WXT | ❌ Deleted — do not revive |
 
-Verified: LinkedIn frame + a generic chat API both resolve to clean semantic events; dup + telemetry suppressed; MCP `wait_for_event` blocks then unblocks on a live event.
+---
 
-### `extension/` — WXT "Tama Agent" recorder. 🚧 ACTIVE (other agents)
-Debugger-free capture (interceptor/relay/dom content scripts + `lib/core/*` copied from har-recorder). Background pushes to the daemon on `8787` (recorder role). Has a "functionality labeler" (`lib/functionality.ts`) mapping discovered source → listenable event. This is becoming the primary recorder.
+## Tama MCP — shipped tools (spec)
 
-### `har-recorder/` — standalone debugger-free recorder. ✅ CAPTURE→DAEMON WIRED
-The original working capture (MAIN-world `interceptor.js` patches fetch/XHR/WS/SSE) + normalization pipeline. `src/background/index.js` now streams each normalized activity event to the daemon over WS (recorder role). Overlaps with `extension/` — two recorders, same daemon target.
+Single connection. Name in server: `tama`. CONTRACT aliases kept.
 
-### `demo/tamagent.html` — the pitch demo (viewer). ✅ EXISTS (owned by demo lane)
-Two 1-bit pixel pets. Connects as `viewer`, wakes the "reflex" pet on `{kind:semantic}`, drains the "poller" pet on `{kind:poll}`. **Energy = tokens** is the core visual argument. Self-simulates with a loud `SIM` badge if the daemon is down (never demo with that badge).
+| Tool | In | Out | Behavior |
+|------|----|-----|----------|
+| `create_listener` / `subscribe` | `{ intent, types?, pageUrl? }` | `{ subId, pageUrl, endpoints, label, keywords }` | Compile listener from NL + discovered traffic. **Must carry page + endpoints** so the extension knows where to go and what to watch. |
+| `list_listeners` | `{}` | `{ active[], capabilities[] }` | Active watches + organically discovered capabilities. |
+| `wait_for_event` | `{ subId }` | semantic event | **Blocks** — the reactive primitive. No internal poll. |
+| `get_listener_events` / `get_recent_events` | `{ subId }` | event[] | Non-blocking drain. |
+| `remove_listener` | `{ subId }` | `{ removed }` | Drop watch; notify extension `unwatch`. |
+| `propose_workflows` | `{ limit? }` | recommendations[] | Heuristic suggestions; approve → `create_listener`. |
+
+### Listener context (additive on Subscription — locking this next)
+
+Every active listener **must** expose enough for the extension to act:
+
+```jsonc
+{
+  "subId": "sub_…",
+  "intent": "new LinkedIn messages",
+  "types": ["message.received"],
+  "keywords": ["messag", "voyager", "inbox", …],
+  "pageUrl": "https://www.linkedin.com/messaging/",   // open / focus this
+  "endpoints": [                                        // watch these surfaces
+    "GET https://www.linkedin.com/voyager/api/messaging/conversations"
+  ],
+  "label": "New message"
+}
+```
+
+- `pageUrl` — inferred from matching candidates/catalog, or passed by the agent.
+- `endpoints` — concrete URL/path templates from organic discovery that matched
+  the intent (not raw telemetry).
+- Infer at **setup** only (deterministic + optional OpenAI refine). Idle path
+  only matches keywords/endpoints already stored.
+
+Types live in `daemon/src/types.ts` (`Subscription`, `ListenerWatch`,
+`RecorderControl`). Wire-through in `perceive` / `bridge` / extension is the
+**next backend lock-in**.
+
+---
+
+## Next build — lock in (daemon ↔ extension control plane)
+
+**Goal:** MCP `create_listener` triggers the extension to open the right tab and
+stream the right traffic; popup says Tama is watching.
+
+### A. Daemon → recorder control (additive; viewers unchanged)
+
+CONTRACT §0 still: viewers receive `{semantic|raw|poll}` only.
+
+**New:** daemon may push to **recorder** sockets only:
+
+```jsonc
+{ "kind": "watch",     "payload": { /* ListenerWatch */ } }
+{ "kind": "unwatch",   "payload": { "subId": "…" } }
+{ "kind": "listeners", "payload": { "active": [ /* ListenerWatch[] */ ] } }
+```
+
+On `create_listener` → emit `watch` + full `listeners` sync.  
+On `remove_listener` → emit `unwatch` + sync.  
+On recorder connect → send current `listeners` snapshot.
+
+### B. Extension (`har-recorder`) on `watch`
+
+1. Store active listeners in SW memory / `chrome.storage`.
+2. If `pageUrl` set: focus existing tab with matching origin, else `tabs.create`.
+3. Start (or keep) capture scoped to that tab/window — debugger-free interceptor
+   already streams to daemon.
+4. Popup: **“Tama is watching this tab”** + list active listeners
+   (label, pageUrl, endpoints). Rebrand off “Workflow Recorder”; kill the
+   outdated debugger-banner copy.
+
+### C. Streaming (already mostly done)
+
+- Extension → daemon: activity events as today (`role: "recorder"`).
+- Daemon → perception → semantic → MCP waiters + viewer `kind:"semantic"`.
+- Narrow ingest with listener `keywords` / `endpoints` (deterministic).
+
+### D. Proof
+
+1. Load har-recorder, daemon running.
+2. Agent: `create_listener({ intent: "new messages", pageUrl?: "https://www.linkedin.com/messaging/" })`.
+3. Extension opens/focuses messaging, status shows watching + endpoints.
+4. Real or fixture DM → `wait_for_event` returns resolved semantic; demo pet wakes.
+
+---
+
+## Plan checklist
+
+### Done
+- [x] Delete WXT `extension/`
+- [x] Tama MCP hub tools + organic catalog (`test:tama`)
+- [x] Unbrowse-style noise filter / endpoint candidates
+- [x] `propose_workflows` MCP path
+- [x] Document listener context + RecorderControl in this file
+
+### Next (us — backend + extension UX)
+- [x] Finish `Subscription` fields (`pageUrl`, `endpoints`, `label`) end-to-end in perceive/MCP return
+- [x] Bridge: track recorders; push `watch` / `unwatch` / `listeners` (`test:control`)
+- [ ] Extension: handle control msgs; open/focus `pageUrl`; start watch scope
+- [ ] Popup: Tama branding + “watching this tab” + listener list
+- [ ] Live LinkedIn (or fixture) E2E with open-tab path
+
+### Later
+- [ ] Pet overlay on page (not just popup)
+- [ ] Background-tab realtime stream tee (LinkedIn RSC) for away-from-tab notifies
+
+### Do not build
+- Per-site MCP connectors · second extension · continuous model on every event ·
+  Firecracker indexing · DB/deploy · autonomous sends
 
 ---
 
 ## Key facts / gotchas
 
-- **Ports:** daemon WS is frozen at `8787` (CONTRACT §0). Don't put anything else there.
-- **Contract envelope (recorder→daemon):** `{ id, type, ts, tabId, url, data }`. Body lives at `data.content.text` (network.response) or `data.payload` (ws/sse). Stable types in `*/core/schema.js`.
-- **Semantic event (daemon→agent):** `{ type, source, ts, from{name,profileId}, to?, conversationId?, text, evidence[] }`.
-- **Redaction is OFF (MVP decision):** we keep **complete** network bodies so perception has full context. `normalize.js` no longer redacts body/frame text. (Revisit before anything public.)
-- **OpenAI:** key in repo-root `.env` (`OPENAI_API_KEY`). Only used for the extraction fallback on unfamiliar sites; deterministic heuristic path works without it.
-- **MCP logs must go to stderr** — stdout is the MCP protocol channel.
-- **Two extensions exist** (`extension/` WXT and `har-recorder/`). Expect consolidation; both target the same daemon.
+- **Port `8787` frozen** (CONTRACT §0).
+- **Activity envelope** `{ id, type, ts, tabId, url, data }` — bodies at
+  `data.content.text` or `data.payload`.
+- **Semantic** `{ type, source, ts, from, text, evidence[] }`.
+- **Redaction OFF (MVP)** — full bodies for perception.
+- **MCP logs → stderr** only.
+- **One extension:** `har-recorder/` only.
 
-## Lanes (who touches what — CONTRACT §4)
-Extension (capture) · Daemon (bridge/perceive) · MCP surface (server.ts) · Demo+pitch. Stay in your lane; don't edit `daemon/` from the extension lane and vice-versa.
-
-## Run it
+## Run
 ```bash
-# 1. daemon
-cd daemon && npm install && npm run dev      # ws://localhost:8787 + MCP stdio
-# 2. recorder: load extension/ or har-recorder/ unpacked in Chrome, start recording on a tab
-# 3. viewer: open demo/tamagent.html  (badge should say "live", not "SIM")
+cd daemon && npm install && npm run dev
+# Load unpacked → har-recorder/
+open demo/tamagent.html   # LIVE, not SIM
+cd daemon && npm run test:tama
 ```
-
-## What's next
-- **Consolidate the two recorders** (or clearly designate one as the demo recorder).
-- **Real poll baseline** for the demo comparison (daemon currently emits a placeholder `poll` tick).
-- **Proactive workflow extraction** (README "Extend" feature) — not started.
-- Harden extraction on more live sites (sender/direction/group-chat edge cases).

@@ -40,12 +40,34 @@ export type ViewerEnvelope =
   | { kind: "raw"; payload: ActivityEvent }
   | { kind: "poll"; payload: { agent: string } };
 
-// CONTRACT §3 — MCP subscription.
+// CONTRACT §3 — MCP subscription / Tama listener.
+// pageUrl + endpoints are additive context so the extension knows which site to
+// open and which network surfaces to watch. Existing fields unchanged.
 export interface Subscription {
   subId: string;
   intent: string;
   types: string[]; // empty => any type
   keywords: string[]; // endpoint/intent narrowing keywords
+  pageUrl: string | null; // site to open / keep watching
+  endpoints: string[]; // concrete URL/path templates to listen on
+  label: string | null; // human label e.g. "New message"
   pending: SemanticEvent[]; // matched-but-undelivered events (drained by wait/get_recent)
   waiters: Array<(event: SemanticEvent) => void>;
 }
+
+/** Snapshot pushed to the extension when a listener is created/removed. */
+export interface ListenerWatch {
+  subId: string;
+  intent: string;
+  types: string[];
+  keywords: string[];
+  pageUrl: string | null;
+  endpoints: string[];
+  label: string | null;
+}
+
+// Additive control envelopes the daemon may push to recorder clients (extension).
+export type RecorderControl =
+  | { kind: "watch"; payload: ListenerWatch }
+  | { kind: "unwatch"; payload: { subId: string } }
+  | { kind: "listeners"; payload: { active: ListenerWatch[] } };

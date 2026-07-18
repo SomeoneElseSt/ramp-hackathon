@@ -1,100 +1,77 @@
-# AGENTS.md — working context for reflex
+# AGENTS.md — working context for reflex / Tama
 
 Read this first. It's the working context for any agent or teammate picking up
 this repo. We build **one after the other on `master`** — sync, do a focused
 piece, push.
 
+For the living status map and **plan to build**, see [`CONTEXT.md`](./CONTEXT.md).
+
 ## Mission
 
-Agents can *use* the web but the web can't *call them back*. Today "watch my
-LinkedIn inbox" means an agent screenshots the page every ~60s, burning tokens
-while nothing happens. **reflex** installs a lightweight listener inside the
-user's own authenticated browser: the agent describes an event in natural
-language, the system watches the right signal locally, the model **stops**, and
-it's woken only when the event actually fires — with entities already resolved.
+Agents can *use* the web but the web can't *call them back*. **Tama MCP** is a
+single local MCP connection: the agent describes what to watch, the
+**har-recorder** extension discovers the signal organically, a deterministic
+listener runs at zero model cost, and the agent wakes on a resolved semantic
+event. Over time the same observation stream recommends workflows worth listening
+for.
 
-> First, we let agents subscribe to the web instead of polling it. Then, by
-> learning how the user works, we help them discover what's worth subscribing to.
+> First, agents subscribe to the web instead of polling it. Then, by learning how
+> the user works, Tama suggests what to watch next.
 
-Everything is local. Cookies, auth headers, CSRF, and passwords never reach the
-model.
+No per-site “connectors.” LinkedIn is a proof site, not a product lane.
+Everything is local. Secrets never reach the model on the idle path.
 
 ## The frozen contract — do not drift
 
-[`CONTRACT.md`](./CONTRACT.md) is frozen. Every lane builds against it
-independently; changing a shape mid-build breaks integration. The essentials:
+[`CONTRACT.md`](./CONTRACT.md) is frozen. Essentials:
 
-- **Extension → daemon** (WS `ws://localhost:8787`): push each already-redacted
-  activity event as it's captured (the envelope in `CONTRACT.md §1`).
-- **Daemon → agent** (MCP): emit **resolved semantic events**
-  (`{type, from:{name}, text, evidence}`) — identities resolved *in the daemon*,
-  so the model spends zero tokens working out who sent what.
-- **MCP tools**: `subscribe(intent)`, `wait_for_event(subId)` (blocks — the
-  reactive primitive; must not poll internally), `get_recent_events(subId)`.
+- **Extension → daemon** (WS `ws://localhost:8787`): activity event envelope (§1).
+- **Daemon → agent** (MCP): resolved semantic events (§2).
+- **MCP tools** (§3): `subscribe` / `wait_for_event` / `get_recent_events` —
+  evolving into Tama hub aliases (`create_listener`, `list_listeners`, …) without
+  breaking these shapes.
 
-## Architecture / data flow
+## Architecture
 
 ```
 browser (authenticated tab)
-  └─ recorder extension ── captures fetch/XHR/WS/SSE + DOM, redacts, stores
-       │  WS: redacted activity events (CONTRACT §1)
+  └─ har-recorder ── capture + organic discovery + workflow hints
+       │  WS: activity events (CONTRACT §1)
        ▼
-  daemon/  bridge.ts → perceive.ts → extract.ts (general, site-agnostic)
-       │      · resolves identities, dedups by stable id
-       │      · broadcasts {semantic|raw|poll} to viewers (demo)
+  daemon/  bridge → perceive → extract (site-agnostic)
+       │      · listener catalog grows from discovered sources
+       │      · broadcasts {semantic|raw|poll} to viewers
        ▼
-  server.ts  MCP stdio: subscribe / wait_for_event / get_recent_events
+  Tama MCP (server.ts) ── one connection for any agent
        ▼
-  Codex / any agent  ── sleeps on wait_for_event, wakes on the real event
+  Codex / agents  ── sleep on wait_for_event, wake on the real event
 ```
 
-## Repo layout / lanes
+## Repo layout
 
 | Path | What it is | State |
 |---|---|---|
-| `har-recorder/` | **The recorder that works** — MV3 extension, debugger-free capture (in-page fetch/XHR/WS/SSE interception, no banner), exports HAR + trace + summary. Now streams events to the daemon. | **the base — build on this** |
-| `daemon/` | The live layer: `bridge` (WS) · `perceive` (incremental) · `extract` (general message extraction, no per-site code) · `intent` (NL → endpoints) · `server` (MCP). | built to CONTRACT |
-| `extension/` | WXT ("Tama Agent") sensor — parallel/newer scaffold with capture wired. Overlaps har-recorder; treat as secondary. | secondary |
-| `demo/` | `tamagent.html`, `pet-widget.html` — the side-by-side polling-vs-listener demo + mascot. | demo lane |
+| `har-recorder/` | **The only extension** — capture, stream to daemon, discovery helpers | **build here** |
+| `daemon/` | Bridge · perceive · extract · intent · Tama MCP | built; evolving listener hub |
+| `demo/` | `tamagent.html`, `pet-widget.html` | demo lane |
+| `CONTEXT.md` | Status + **plan to build** | update when you land work |
 | `CONTRACT.md` `PITCH.md` `README.md` | frozen interface · pitch · overview | — |
 
-**Which recorder?** `har-recorder/` is the proven one and the daemon streams
-from it — **build capture/streaming work there**, not in `extension/`.
+**WXT `extension/` is deleted.** Do not recreate it.
 
 ## Run it
 
 ```bash
-# daemon (live layer + MCP)
-cd daemon && npm install && npm run dev          # ws://localhost:8787, MCP on stdio
-
-# recorder: load har-recorder/ unpacked (chrome://extensions → Load unpacked → har-recorder)
-#   (it has a static manifest.json — no build step)
-
-# demo viewer
+cd daemon && npm install && npm run dev
+# Load unpacked: har-recorder/
 open demo/tamagent.html
 ```
 
-## Rules for working here
+## Rules
 
-- **Sync before you build, push when done:** `git pull --rebase origin master`
-  → focused change → `git push origin master`. We share `master`.
-- **Never clobber a teammate's file.** If a rebase touches someone else's lane,
-  prefer theirs; keep your work additive. Lanes are in `CONTRACT.md §4`.
-- **Don't change `CONTRACT.md` shapes** without telling the whole team.
-- **Never send secrets to the model.** Redaction happens in the capture layer;
-  the daemon rejects any event still carrying a sensitive header.
-- **Consequential actions require user approval** (e.g. sending a reply). The
-  system observes and prepares; it never sends on the user's behalf unprompted.
-
-## Where to pick up next (open items)
-
-- **Background detection.** On LinkedIn the message *content* is fetched only
-  when the tab is focused; the real-time signal for a hidden tab is the realtime
-  push stream (an RSC `server-stream-request`). Tapping its frames (tee the
-  `ReadableStream`) is the unsolved-but-load-bearing piece for "notify me while
-  away." The triggered-fetch path works when the tab is active.
-- **Overlay.** "Tama is watching this tab" + the discovered functionalities it
-  can listen for (see `extension/lib/functionality.ts` for the source→label
-  mapping) — wire onto the recorder + daemon discovery.
-- **Proactive act.** Learn a repeated workflow from recorded episodes → propose
-  a listener → user approves → the same listener is created.
+- `git pull --rebase origin master` → focused change → `git push origin master`.
+- Never clobber a teammate's lane (`CONTRACT.md` §4).
+- Don't change `CONTRACT.md` shapes without telling the team.
+- Models only at setup / ambiguous extract / workflow propose / dispatched work —
+  never continuous over every browser event.
+- Consequential actions require user approval.

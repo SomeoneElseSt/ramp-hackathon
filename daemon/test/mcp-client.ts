@@ -19,7 +19,8 @@ async function main(): Promise<void> {
   console.log("tools:", tools.tools.map((t) => t.name).join(", "));
 
   const subRes = await client.callTool({ name: "subscribe", arguments: { intent: "new messages" } });
-  const { subId } = JSON.parse(textOf(subRes));
+  const sub = JSON.parse(textOf(subRes)) as { subId: string };
+  const { subId } = sub;
   console.log("subscribed:", subId);
 
   // Give the daemon's WS bridge a moment, then push an event AFTER we start waiting.

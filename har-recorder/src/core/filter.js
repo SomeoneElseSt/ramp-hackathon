@@ -6,6 +6,7 @@
 import { ACTION_TYPES, EventType } from "./schema.js";
 import { SCHEMA_VERSION } from "./schema.js";
 import { groupByAction } from "./correlate.js";
+import { isNoiseUrl } from "./noise-patterns.js";
 
 const STATIC_RESOURCE_TYPES = new Set([
   "Image",
@@ -20,18 +21,16 @@ const STATIC_RESOURCE_TYPES = new Set([
   "Preflight",
 ]);
 
-const ANALYTICS_HOST_RE =
-  /(google-analytics|googletagmanager|analytics\.google|doubleclick|g\.doubleclick|stats\.g|segment\.(io|com)|mixpanel|amplitude|fullstory|hotjar|heap(analytics)?|sentry\.io|browser\.sentry|datadoghq|nr-data|newrelic|bugsnag|intercom|facebook\.com\/tr|connect\.facebook|clarity\.ms|optimizely|braze|snowplow|matomo|piwik|cdn\.mxpnl)/i;
-
 export function isStaticAsset(ev) {
   const rt = ev.data?.resourceType;
   return !!rt && STATIC_RESOURCE_TYPES.has(rt);
 }
 export function isAnalytics(ev) {
-  return !!ev.data?.url && ANALYTICS_HOST_RE.test(ev.data.url);
+  // Unbrowse NOISE_HOSTS / NOISE_PATHS cover analytics + telemetry + trackers.
+  return !!ev.data?.url && isNoiseUrl(ev.data.url);
 }
 export function isPreflight(ev) {
-  return ev.data?.method === "OPTIONS";
+  return ev.data?.method === "OPTIONS" || ev.data?.method === "HEAD";
 }
 export function isZeroByteIrrelevant(ev) {
   // 204/304 or empty non-API responses with no body are rarely meaningful.
@@ -49,9 +48,9 @@ export function isNetworkNoise(ev) {
     ev.type !== EventType.NETWORK_RESPONSE
   )
     return false;
+  if (ev.data?.url && isNoiseUrl(ev.data.url)) return true;
   return (
     isStaticAsset(ev) ||
-    isAnalytics(ev) ||
     isPreflight(ev) ||
     isZeroByteIrrelevant(ev)
   );
