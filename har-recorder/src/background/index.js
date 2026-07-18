@@ -43,8 +43,8 @@ const activeWatches = new Map();
 // them for export). All localhost-only. Adds only an outbound WS client; the
 // event envelope is unchanged (CONTRACT §1).
 //
-// Daemon → extension: RecorderControl {watch|unwatch|listeners} opens/focuses
-// a tab via the integration harness so ambient capture has an auth surface.
+// Daemon → extension: RecorderControl {watch|unwatch|listeners} opens/attaches
+// a tab in background (no focus steal) via the integration harness.
 const DAEMON_URL = "ws://localhost:8787";
 
 function createDaemonClient(url, { onControl, onStatus } = {}) {
@@ -131,7 +131,8 @@ async function handleRecorderControl(msg) {
 }
 
 /**
- * Integration harness entry: ensure ambient capture + open/focus pageUrl.
+ * Integration harness entry: ensure ambient capture + open pageUrl in background.
+ * Never steals focus — silent attach to an existing tab, or create inactive.
  * @param {object} watch ListenerWatch from daemon
  */
 async function onWatch(watch) {
@@ -151,7 +152,7 @@ async function onWatch(watch) {
   }
 
   try {
-    const tab = await openOrFocusTab(target.pageUrl);
+    const tab = await openTabInBackground(target.pageUrl);
     if (tab?.id != null) {
       if (!recording) {
         recording = true;
@@ -178,7 +179,8 @@ async function onWatch(watch) {
   broadcast();
 }
 
-async function openOrFocusTab(pageUrl) {
+/** Open/attach silently — no active tab switch, no window focus. */
+async function openTabInBackground(pageUrl) {
   let origin;
   try {
     origin = new URL(pageUrl).origin;
@@ -200,17 +202,14 @@ async function openOrFocusTab(pageUrl) {
     });
   if (ranked[0]) {
     const tab = ranked[0];
-    await chrome.tabs.update(tab.id, { active: true });
-    if (tab.windowId != null) {
-      try { await chrome.windows.update(tab.windowId, { focused: true }); } catch (_) {}
-    }
-    // If we're on the right origin but wrong path (feed vs messaging), navigate.
+    // Silent attach: do NOT activate tab or focus window.
+    // If wrong path (feed vs messaging), navigate in place without activating.
     if (pathPrefix !== "/" && !(tab.url || "").includes(pathPrefix)) {
-      await chrome.tabs.update(tab.id, { url: pageUrl });
+      await chrome.tabs.update(tab.id, { url: pageUrl, active: false });
     }
     return tab;
   }
-  return chrome.tabs.create({ url: pageUrl, active: true });
+  return chrome.tabs.create({ url: pageUrl, active: false });
 }
 
 function updateListeningBadge() {

@@ -11,7 +11,7 @@ Last updated: 2026-07-18 (branch `feat/ambient-ingest-filter`).
 ## Locked plan (read this)
 
 **Extension = modular integration harness** — not per-site MCP connectors.
-**MCP creates listeners**; minimum listen behavior is **open/focus a tab** + ambient capture.
+**MCP creates listeners**; minimum listen behavior is **open a tab in background** (no focus steal) + ambient capture.
 **LinkedIn** = first permissible proof module — stress-tests the funnel, not a product lane.
 
 ```
@@ -21,7 +21,7 @@ create_listener(intent)
 daemon: compile {pageUrl, endpoints, label} → WS {kind:"watch"}
         │
         ▼
-extension harness: resolve IntegrationModule → open/focus tab
+extension harness: resolve IntegrationModule → bg open/attach (no focus)
         │
         ▼
 ambient capture (fetch/XHR/WS/SSE) → activity events → daemon
@@ -91,7 +91,7 @@ listeners, not a HAR event counter.
 
 Two ways in (same capture path):
 
-1. **MCP-driven:** `create_listener` → `{kind:"watch"}` → open/focus + ambient.
+1. **MCP-driven:** `create_listener` → `{kind:"watch"}` → bg open/attach + ambient.
 2. **User-driven:** popup “Sit on this window” → same ambient listen.
 
 Until ambient is on → no candidates → nothing useful to rank.
@@ -140,7 +140,7 @@ candidate identity (request-URL stamp fix landed).
 | Path | Role | Status |
 |------|------|--------|
 | `daemon/` | Bridge · ingest · catalog · Tama MCP · watch | ✅ Hub + control + Unbrowse ingest + LinkedIn defaults |
-| `har-recorder/` | Ambient capture + **integration harness** | ✅ Capture→daemon; open/focus tab on `watch` |
+| `har-recorder/` | Ambient capture + **integration harness** | ✅ Capture→daemon; bg open/attach on `watch` |
 | `demo/` | Pet viewer | ✅ |
 | ~~`extension/`~~ | WXT | ❌ Deleted |
 
@@ -165,13 +165,14 @@ candidate identity (request-URL stamp fix landed).
 - [x] Document ambient funnel + “LLM only on shortlist”
 - [x] Extract LinkedIn GraphQL / DecoratedEvent DMs + response request-URL stamp
 - [x] **Plan locked:** extension = modular harness; LinkedIn first proof module
-- [x] Harness: `IntegrationModule` + linkedin proof → open/focus tab on `watch`
+- [x] Harness: `IntegrationModule` + linkedin proof → bg open/attach on `watch` (no focus steal)
 - [x] Daemon LinkedIn defaults so `create_listener` always ships `pageUrl`
 - [x] Popup: Tama ambient UI (daemon + listeners; capture demoted)
 - [x] **Live operate path works:** `create_listener` → watch → open messaging; extension reconnects as recorder
+- [x] Prolonged bg listen: `ops-listen` loops `wait_for_event`; watch never steals focus
 
 ### Next
-- [ ] Live DM wake test with user: ambient ON + `wait_for_event` on real LinkedIn message
+- [ ] Live DM wake test with user: ambient ON + prolonged `wait_for_event` on real LinkedIn message
 - [ ] Second module only when needed (same harness interface)
 - [ ] Popup: candidate shortlist / propose-workflow surface
 
@@ -203,5 +204,5 @@ cd daemon && npm run test:ingest && npm run test:tama && npm run test:control
 ### Manual: MCP → open LinkedIn tab (target proof)
 1. Load unpacked `har-recorder/`, daemon `npm run dev`.
 2. Agent: `create_listener({ intent: "new LinkedIn messages" })`.
-3. Extension receives `{kind:"watch"}`, opens/focuses messaging URL, starts ambient.
-4. Agent: `wait_for_event({ subId })` → wakes on extracted DM.
+3. Extension receives `{kind:"watch"}`, opens/attaches messaging URL in background, starts ambient.
+4. Agent: prolonged `wait_for_event({ subId })` loop → wakes on each extracted DM.
