@@ -1,0 +1,234 @@
+// index.js — service-worker entry. Orchestrates capture (CDP + tabs + content
+// script), local storage, and export. All processing is local; nothing is sent
+// anywhere. Raw normalized events are stored uncorrelated; correlation + HAR +
+// summary are computed at export time as global passes.
+
+import {
+  appendEvent,
+  clearAll,
+  countEvents,
+  getAllEvents,
+  getMeta,
+  setMeta,
+} from "../core/storage.js";
+import { createTabTracker, isRestrictedUrl } from "./tabs.js";
+import * as N from "../core/normalize.js";
+import { correlate } from "../core/correlate.js";
+import { buildSummary } from "../core/filter.js";
+import { buildHar } from "../core/har.js";
+import { containsForbiddenHeader } from "../core/redact.js";
+import { SCHEMA_VERSION } from "../core/schema.js";
+
+// Robust, restart-safe unique id (raw ids need only be unique, not ordered;
+// export sorts by ts). Node tests use a deterministic factory instead.
+function robustIdFactory() {
+  let n = 0;
+  return () => {
+    const rnd = (crypto.getRandomValues(new Uint32Array(1))[0] || 0).toString(36);
+    return `e${Date.now().toString(36)}${(n++).toString(36)}${rnd}`;
+  };
+}
+const idFn = robustIdFactory();
+
+let recording = false;
+
+// ---- live stream to the local listener host --------------------------------
+// The extension IS the laptop sensor: it streams captured events to a local
+// companion (server/server.js) that hosts listeners + the MCP bridge, so
+// listeners fire in real time. If the host isn't running, events are dropped
+// from the stream (IndexedDB still has them for export). All localhost-only.
+let STREAM_URL = "http://127.0.0.1:7345/ingest";
+let streamBatch = [];
+let streamTimer = null;
+function streamEvent(ev) {
+  streamBatch.push(ev);
+  if (streamTimer) return;
+  streamTimer = setTimeout(flushStream, 400);
+}
+async function flushStream() {
+  streamTimer = null;
+  if (!streamBatch.length) return;
+  const events = streamBatch;
+  streamBatch = [];
+  try {
+    await fetch(STREAM_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ events }) });
+  } catch (_) {
+    // host not running — fine; capture still persists locally
+  }
+}
+
+// ---- storage sink (redaction already applied in normalize) -----------------
+async function store(ev) {
+  if (!ev) return;
+  // Guard: never persist an event that still carries a forbidden header.
+  const h = ev.data?.headers;
+  if (h && containsForbiddenHeader(h)) {
+    ev = { ...ev, data: { ...ev.data, headers: (ev.data.headers || []).filter((x) => !containsForbiddenHeader([x])) } };
+  }
+  await appendEvent(ev);
+  streamEvent(ev); // feed the local listener host in real time
+  broadcast();
+}
+
+let broadcastTimer = null;
+function broadcast() {
+  if (broadcastTimer) return;
+  broadcastTimer = setTimeout(() => {
+    broadcastTimer = null;
+    chrome.runtime.sendMessage({ type: "state-changed" }).catch(() => {});
+  }, 250);
+}
+
+// ---- sensors (debugger-free) -----------------------------------------------
+// Network capture is done by injecting the MAIN-world interceptor (patches
+// fetch/XHR/WebSocket/EventSource) instead of chrome.debugger — no "being
+// debugged" banner. Injection is scoped to opted-in tabs only.
+const injectedTabs = new Set();
+const tabs = createTabTracker({
+  onEvent: store,
+  idFn,
+  onAttach: async (tabId) => injectSensors(tabId),
+  onDetach: (tabId) => injectedTabs.delete(tabId),
+});
+
+async function injectSensors(tabId) {
+  if (injectedTabs.has(tabId)) return;
+  try {
+    // MAIN-world network interceptor + isolated-world relay
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/interceptor.js"], world: "MAIN" });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/relay.js"], world: "ISOLATED" });
+    // DOM interaction capture
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/content-script.js"] });
+    injectedTabs.add(tabId);
+  } catch (_) {
+    // restricted page (chrome://, store) — can't inject; skip
+  }
+}
+
+// ---- page-capture (debugger-free network capture via the MAIN-world interceptor)
+function ctxOf(sender) {
+  const tab = sender.tab;
+  return (tab && tabs.getCtx(tab.id)) || { tabId: tab?.id ?? null, windowId: tab?.windowId ?? null, url: tab?.url ?? null, title: tab?.title ?? null };
+}
+function pageCaptureToEvents(rec, ctx) {
+  if (rec.kind === "http") {
+    const rid = idFn();
+    return [
+      N.networkRequest(idFn, { ts: rec.ts, requestId: rid, method: rec.method || "GET", url: rec.url, resourceType: "Fetch", headers: {}, initiator: {} }, ctx),
+      N.networkResponse(idFn, { ts: rec.ts, requestId: rid, status: rec.status ?? 0, mimeType: rec.ct || "", headers: {} }, ctx, rec.body ? { text: rec.body, base64Encoded: false, mimeType: rec.ct || "" } : null),
+    ];
+  }
+  if (rec.kind === "sse") return [N.sseMessage(idFn, { ts: rec.ts, requestId: null, url: rec.url, data: rec.data }, ctx)];
+  if (rec.kind === "ws") return [N.webSocketFrame(idFn, { ts: rec.ts, direction: rec.dir, payload: rec.data }, ctx)];
+  return [];
+}
+
+// ---- content-script DOM events + page captures -----------------------------
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === "dom-event") {
+    if (!recording) return; // ignore stray events after stop
+    const ev = N.domInteraction(idFn, msg.payload, ctxOf(sender));
+    if (ev) store(ev);
+    return; // no response needed
+  }
+  if (msg?.type === "page-capture") {
+    if (!recording) return;
+    for (const ev of pageCaptureToEvents(msg.rec, ctxOf(sender))) store(ev);
+    return;
+  }
+
+  // popup commands (async)
+  (async () => {
+    switch (msg?.type) {
+      case "get-state":
+        sendResponse({
+          recording,
+          scope: await getMeta("scope", null),
+          entryCount: await countEvents(),
+          attached: [...injectedTabs],
+          schemaVersion: SCHEMA_VERSION,
+        });
+        break;
+      case "start": {
+        recording = true;
+        const scope = normalizeScope(msg.scope);
+        await setMeta("scope", scope);
+        await setMeta("startedAt", Date.now());
+        await setMeta("recording", true);
+        await tabs.start(scope);
+        broadcast();
+        sendResponse({ ok: true, scope });
+        break;
+      }
+      case "stop":
+        recording = false;
+        await setMeta("recording", false);
+        tabs.stop();
+        injectedTabs.clear();
+        // tell content scripts (interceptor relay + DOM) to stop observing
+        chrome.tabs.query({}, (all) => {
+          for (const t of all) chrome.tabs.sendMessage(t.id, { type: "wf-stop" }).catch(() => {});
+        });
+        broadcast();
+        sendResponse({ ok: true });
+        break;
+      case "clear":
+        await clearAll();
+        broadcast();
+        sendResponse({ ok: true });
+        break;
+      case "export": {
+        const raw = await getAllEvents();
+        const correlated = correlate(raw);
+        sendResponse({
+          ok: true,
+          counts: { events: correlated.length },
+          artifacts: buildArtifacts(correlated),
+        });
+        break;
+      }
+      case "list-tabs": {
+        const all = await chrome.tabs.query({});
+        sendResponse({
+          tabs: all
+            .filter((t) => !isRestrictedUrl(t.url))
+            .map((t) => ({ id: t.id, windowId: t.windowId, title: t.title, url: t.url })),
+          currentWindow: (await chrome.windows.getCurrent()).id,
+        });
+        break;
+      }
+    }
+  })();
+  return true; // async sendResponse for popup commands
+});
+
+function normalizeScope(scope) {
+  if (!scope || scope.mode === "window") {
+    return { mode: "window", windowId: scope?.windowId ?? null, tabIds: [] };
+  }
+  return { mode: "tabs", windowId: null, tabIds: scope.tabIds || [] };
+}
+
+function buildArtifacts(events) {
+  const har = buildHar(events);
+  const summary = buildSummary(events, { generatedAt: Date.now() });
+  const trace = {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt: Date.now(),
+    eventCount: events.length,
+    events,
+  };
+  return { har, trace, summary };
+}
+
+// If the worker restarts mid-recording, restore the flag (attachments are
+// re-established lazily as events arrive / tabs update).
+(async () => {
+  const started = await getMeta("startedAt", null);
+  const scope = await getMeta("scope", null);
+  const wasRecording = await getMeta("recording", false);
+  if (wasRecording && scope) {
+    recording = true;
+    await tabs.start(normalizeScope(scope)).catch(() => {});
+  }
+})();

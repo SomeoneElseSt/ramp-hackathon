@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Workflow Recorder (research prototype)",
+  "version": "0.1.0",
+  "description": "Locally records cross-tab workflows — network (via in-page fetch/XHR/WebSocket/SSE interception, no debugger banner), clicks, forms, navigation, tab switches — and exports HAR + activity trace + compact summary. Nothing leaves your machine.",
+  "permissions": [
+    "tabs",
+    "storage",
+    "downloads",
+    "scripting",
+    "webNavigation"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background/index.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Workflow Recorder",
+    "default_popup": "src/popup/popup.html"
+  }
+}
