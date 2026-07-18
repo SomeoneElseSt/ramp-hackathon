@@ -93,6 +93,12 @@ function createDaemonClient(url, { onControl, onStatus } = {}) {
     connected() {
       return !!(socket && socket.readyState === WebSocket.OPEN);
     },
+    /** Kick a reconnect if the SW slept and dropped the socket (MV3). */
+    ensure() {
+      if (socket && socket.readyState === WebSocket.OPEN) return;
+      if (socket && socket.readyState === WebSocket.CONNECTING) return;
+      connect();
+    },
     push(ev) {
       if (socket && socket.readyState === WebSocket.OPEN) {
         try { socket.send(JSON.stringify(ev)); return; } catch (_) {}
@@ -348,6 +354,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     switch (msg?.type) {
       case "get-state":
+        daemon.ensure();
         sendResponse({
           recording,
           scope: await getMeta("scope", null),

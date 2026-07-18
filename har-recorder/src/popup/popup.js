@@ -199,9 +199,15 @@ async function render() {
   stopBtn.disabled = !ambientOn;
 
   if (Date.now() < holdHappyUntil) return;
-  if (!connected) setState("distress");
-  else if (ambientOn || listening.length > 0) setState("watching");
-  else setState("sleeping");
+  // Daemon offline is not "failure detected" — SW WebSockets flap on MV3 wake.
+  // Only console.error / explicit bad signals use distress (see WS handler).
+  if (ambientOn || listening.length > 0) setState("watching");
+  else if (!connected) {
+    setState("sleeping");
+    tag.textContent = "daemon offline";
+  } else {
+    setState("sleeping");
+  }
 }
 
 startBtn.onclick = async (e) => {
