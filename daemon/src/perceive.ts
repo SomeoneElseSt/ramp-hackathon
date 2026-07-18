@@ -108,6 +108,7 @@ class Perceiver {
     const matched = pickWatchTargets(candidates, plan.keywords, catalog.list(), pageUrl);
     const filled = applyIntegrationDefaults(intent, matched);
     const subId = "sub_" + Math.abs(hashCode(intent + this.subscriptions.size)).toString(36);
+    const now = Date.now();
     const sub: Subscription = {
       subId,
       intent,
@@ -116,12 +117,16 @@ class Perceiver {
       pageUrl: filled.pageUrl,
       endpoints: filled.endpoints,
       label: filled.label,
+      sinceTs: now,
+      createdAt: now,
       pending: [],
       waiters: [],
     };
     this.subscriptions.set(subId, sub);
+    // Event-forward only: never carry pre-arm buffer into waiters.
+    sub.pending.length = 0;
     log(
-      `create_listener ${subId} intent="${intent}" pageUrl=${filled.pageUrl ?? "—"} endpoints=${filled.endpoints.length} keywords=[${plan.keywords.join(",")}]${filled.moduleId ? ` module=${filled.moduleId}` : ""}`,
+      `create_listener ${subId} sinceTs=${now} intent="${intent}" pageUrl=${filled.pageUrl ?? "—"} endpoints=${filled.endpoints.length} keywords=[${plan.keywords.join(",")}]${filled.moduleId ? ` module=${filled.moduleId}` : ""}`,
     );
     this.emitter.emit("watch", toWatch(sub));
     this.emitter.emit("listeners", this.listListeners().active.map(summaryToWatch));
@@ -185,6 +190,8 @@ class Perceiver {
   waitForEvent(subId: string): Promise<SemanticEvent> | null {
     const sub = this.subscriptions.get(subId);
     if (!sub) return null;
+    // Drop anything older than the arm watermark before waking.
+    this.drainStalePending(sub);
     const queued = sub.pending.shift();
     if (queued) return Promise.resolve(queued);
     return new Promise<SemanticEvent>((resolve) => sub.waiters.push(resolve));
@@ -198,6 +205,15 @@ class Perceiver {
     const sub = this.subscriptions.get(subId);
     if (!sub) return null;
     return sub.pending.splice(0);
+  }
+
+  /** Clear matched-but-undelivered events (arm / re-arm). */
+  drainListener(subId: string): number {
+    const sub = this.subscriptions.get(subId);
+    if (!sub) return -1;
+    const n = sub.pending.length;
+    sub.pending.length = 0;
+    return n;
   }
 
   proposeWorkflows(limit = 5): WorkflowRecommendation[] {
@@ -223,10 +239,17 @@ class Perceiver {
 
   private matches(sub: Subscription, event: SemanticEvent): boolean {
     if (event.type === "listener.removed") return false;
+    // Watermark: ignore semantic events from before the listener was armed.
+    if (typeof event.ts === "number" && event.ts < sub.sinceTs) return false;
     if (sub.types.length > 0 && !sub.types.includes(event.type)) return false;
     if (sub.keywords.length === 0) return true;
     const haystack = `${event.type} ${event.source} ${event.text}`.toLowerCase();
     return sub.keywords.some((k) => haystack.includes(k));
+  }
+
+  private drainStalePending(sub: Subscription): void {
+    if (sub.pending.length === 0) return;
+    sub.pending = sub.pending.filter((e) => !(typeof e.ts === "number" && e.ts < sub.sinceTs));
   }
 
   private isPerceivable(event: ActivityEvent): boolean {
@@ -283,6 +306,7 @@ function toWatch(sub: Subscription): ListenerWatch {
     pageUrl: sub.pageUrl,
     endpoints: sub.endpoints,
     label: sub.label,
+    sinceTs: sub.sinceTs,
   };
 }
 

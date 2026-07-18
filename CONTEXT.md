@@ -4,7 +4,7 @@ Living notes on what this repo is, how the pieces fit, and what's done vs. next.
 **`CONTRACT.md` is the frozen source of truth for activity/semantic shapes and
 port `8787`.** This file is the map + build plan. Update it when you land something.
 
-Last updated: 2026-07-18 (branch `feat/ambient-ingest-filter`).
+Last updated: 2026-07-18 (landed on `master`).
 
 ---
 
@@ -171,9 +171,10 @@ candidate identity (request-URL stamp fix landed).
 - [x] **Live operate path works:** `create_listener` → watch → open messaging; extension reconnects as recorder
 - [x] Prolonged bg listen: `ops-listen` loops `wait_for_event`; watch never steals focus
 - [x] Connection lifecycle: WS keepalive+reconnect while watch; MCP wait cycles keep listeners; idle only when both gone
+- [x] **Listeners are event-forward from arm time** — `sinceTs` watermark on `create_listener`; `wait_for_event` ignores `ts < sinceTs`; drain pending on arm (not a history scrape). Old Hi/Sup never wake.
 
 ### Next
-- [ ] Live DM wake test with user: ambient ON + prolonged `wait_for_event` on real LinkedIn message
+- [ ] Live DM wake test with user: ambient ON + oneshot/prolonged wait on a *new* LinkedIn message
 - [ ] Second module only when needed (same harness interface)
 - [ ] Popup: candidate shortlist / propose-workflow surface
 
