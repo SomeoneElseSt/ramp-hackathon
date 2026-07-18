@@ -13,11 +13,15 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "subscribe",
-    "Register interest in web events described in natural language (e.g. 'new messages'). Returns a subId. Alias of create_listener.",
-    { intent: z.string(), types: z.array(z.string()).optional() },
-    async ({ intent, types }) => {
-      const subId = await perceiver.createListener(intent, types);
-      return text({ subId });
+    "Register interest in web events described in natural language (e.g. 'new messages'). Returns listener context including pageUrl + endpoints for the extension. Alias of create_listener.",
+    {
+      intent: z.string(),
+      types: z.array(z.string()).optional(),
+      pageUrl: z.string().url().optional(),
+    },
+    async ({ intent, types, pageUrl }) => {
+      const subId = await perceiver.createListener(intent, types, pageUrl ?? null);
+      return text(perceiver.getWatch(subId));
     },
   );
 
@@ -48,11 +52,15 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "create_listener",
-    "Create a persistent listener from a natural-language intent. Compiles endpoint keywords from organically discovered traffic (setup-time only). Returns { subId }.",
-    { intent: z.string(), types: z.array(z.string()).optional() },
-    async ({ intent, types }) => {
-      const subId = await perceiver.createListener(intent, types);
-      return text({ subId });
+    "Create a persistent listener from a natural-language intent. Returns { subId, intent, pageUrl, endpoints, keywords, label } so the extension can open the site and watch the right surfaces.",
+    {
+      intent: z.string(),
+      types: z.array(z.string()).optional(),
+      pageUrl: z.string().url().optional(),
+    },
+    async ({ intent, types, pageUrl }) => {
+      const subId = await perceiver.createListener(intent, types, pageUrl ?? null);
+      return text(perceiver.getWatch(subId));
     },
   );
 

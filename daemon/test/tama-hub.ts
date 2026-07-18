@@ -71,8 +71,14 @@ async function main(): Promise<void> {
     name: "create_listener",
     arguments: { intent: "new LinkedIn messages" },
   });
-  const { subId } = JSON.parse(textOf(createRes)) as { subId: string };
-  console.log("created listener:", subId);
+  const created = JSON.parse(textOf(createRes)) as {
+    subId: string;
+    pageUrl: string | null;
+    endpoints: string[];
+    label: string | null;
+  };
+  const { subId } = created;
+  console.log("created listener:", subId, "pageUrl=", created.pageUrl, "endpoints=", created.endpoints.length);
 
   const waitPromise = client.callTool({ name: "wait_for_event", arguments: { subId } });
 

@@ -20,6 +20,9 @@ export interface ListenerSummary {
   intent: string;
   types: string[];
   keywords: string[];
+  pageUrl: string | null;
+  endpoints: string[];
+  label: string | null;
   pendingCount: number;
   waiting: boolean;
 }
@@ -71,6 +74,9 @@ export function summarizeListeners(subs: Iterable<Subscription>): ListenerSummar
     intent: s.intent,
     types: s.types,
     keywords: s.keywords,
+    pageUrl: s.pageUrl,
+    endpoints: s.endpoints,
+    label: s.label,
     pendingCount: s.pending.length,
     waiting: s.waiters.length > 0,
   }));

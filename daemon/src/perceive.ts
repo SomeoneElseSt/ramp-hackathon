@@ -1,11 +1,17 @@
 import { EventEmitter } from "node:events";
-import type { ActivityEvent, SemanticEvent, Subscription } from "./types.js";
+import type { ActivityEvent, ListenerWatch, SemanticEvent, Subscription } from "./types.js";
 import { extractFrom } from "./extract.js";
 import { planForIntent, refinePlanWithLLM } from "./intent.js";
-import { collectEndpointCandidates } from "./endpoints.js";
-import { catalog, summarizeListeners, type CatalogCapability, type ListenerSummary } from "./catalog.js";
+import { collectEndpointCandidates, type EndpointCandidate } from "./endpoints.js";
+import {
+  catalog,
+  summarizeListeners,
+  type CatalogCapability,
+  type ListenerSummary,
+} from "./catalog.js";
 import { recommendWorkflows, type WorkflowRecommendation } from "./workflows.js";
 import { log } from "./logger.js";
+import { describeSource } from "./functionality.js";
 
 // The perception layer. Runs incrementally over the growing raw buffer
 // (CONTRACT §5), dedups semantic events by a stable key, and drives both the
@@ -82,34 +88,44 @@ class Perceiver {
 
   // ---- Tama listener hub --------------------------------------------------
 
-  /** CONTRACT subscribe + Tama create_listener */
-  createListener(intent: string, types?: string[]): Promise<string> {
-    return this.subscribeAsync(intent, types);
-  }
-
-  subscribe(intent: string, types?: string[]): Promise<string> {
-    return this.subscribeAsync(intent, types);
-  }
-
-  async subscribeAsync(intent: string, types?: string[]): Promise<string> {
+  async subscribeAsync(
+    intent: string,
+    types?: string[],
+    pageUrl?: string | null,
+  ): Promise<string> {
     this.runDiscovery();
     const base = planForIntent(intent);
     const candidates = collectEndpointCandidates(this.raw);
     const plan = await refinePlanWithLLM(intent, base, candidates);
+    const matched = pickWatchTargets(candidates, plan.keywords, catalog.list(), pageUrl);
     const subId = "sub_" + Math.abs(hashCode(intent + this.subscriptions.size)).toString(36);
     const sub: Subscription = {
       subId,
       intent,
       types: types && types.length > 0 ? types : plan.types,
       keywords: plan.keywords,
+      pageUrl: matched.pageUrl,
+      endpoints: matched.endpoints,
+      label: matched.label,
       pending: [],
       waiters: [],
     };
     this.subscriptions.set(subId, sub);
     log(
-      `create_listener ${subId} intent="${intent}" keywords=[${plan.keywords.join(",")}] candidates=${candidates.length}`,
+      `create_listener ${subId} intent="${intent}" pageUrl=${matched.pageUrl ?? "—"} endpoints=${matched.endpoints.length} keywords=[${plan.keywords.join(",")}]`,
     );
+    this.emitter.emit("watch", toWatch(sub));
+    this.emitter.emit("listeners", this.listListeners().active.map(summaryToWatch));
     return subId;
+  }
+
+  /** CONTRACT subscribe + Tama create_listener */
+  createListener(intent: string, types?: string[], pageUrl?: string | null): Promise<string> {
+    return this.subscribeAsync(intent, types, pageUrl);
+  }
+
+  subscribe(intent: string, types?: string[], pageUrl?: string | null): Promise<string> {
+    return this.subscribeAsync(intent, types, pageUrl);
   }
 
   listListeners(): {
@@ -126,7 +142,6 @@ class Perceiver {
   removeListener(subId: string): boolean {
     const sub = this.subscriptions.get(subId);
     if (!sub) return false;
-    // Unblock any waiters with a no-op rejection path — resolve is safer for MCP.
     for (const waiter of sub.waiters) {
       waiter({
         type: "listener.removed",
@@ -139,7 +154,14 @@ class Perceiver {
     }
     this.subscriptions.delete(subId);
     log(`remove_listener ${subId}`);
+    this.emitter.emit("unwatch", { subId });
+    this.emitter.emit("listeners", this.listListeners().active.map(summaryToWatch));
     return true;
+  }
+
+  getWatch(subId: string): ListenerWatch | null {
+    const sub = this.subscriptions.get(subId);
+    return sub ? toWatch(sub) : null;
   }
 
   hasSubscription(subId: string): boolean {
@@ -236,6 +258,87 @@ function hashCode(input: string): number {
   let hash = 0;
   for (let i = 0; i < input.length; i++) hash = (hash * 31 + input.charCodeAt(i)) | 0;
   return hash;
+}
+
+function toWatch(sub: Subscription): ListenerWatch {
+  return {
+    subId: sub.subId,
+    intent: sub.intent,
+    types: sub.types,
+    keywords: sub.keywords,
+    pageUrl: sub.pageUrl,
+    endpoints: sub.endpoints,
+    label: sub.label,
+  };
+}
+
+function summaryToWatch(s: ListenerSummary): ListenerWatch {
+  return {
+    subId: s.subId,
+    intent: s.intent,
+    types: s.types,
+    keywords: s.keywords,
+    pageUrl: s.pageUrl,
+    endpoints: s.endpoints,
+    label: s.label,
+  };
+}
+
+/** Pick pageUrl + endpoint list for a new listener from discovered traffic. */
+function pickWatchTargets(
+  candidates: EndpointCandidate[],
+  keywords: string[],
+  capabilities: CatalogCapability[],
+  pageUrlHint?: string | null,
+): { pageUrl: string | null; endpoints: string[]; label: string | null } {
+  const kw = keywords.map((k) => k.toLowerCase());
+  const scored = candidates
+    .map((c) => {
+      const hay = `${c.url} ${c.path}`.toLowerCase();
+      const hits = kw.filter((k) => hay.includes(k)).length;
+      return { c, hits };
+    })
+    .filter((x) => x.hits > 0 || kw.length === 0)
+    .sort((a, b) => b.hits - a.hits || b.c.count - a.c.count);
+
+  const top = scored.slice(0, 5).map((x) => x.c);
+  const endpoints = top.map((c) => c.key);
+  let label: string | null = null;
+  if (top[0]) {
+    label = describeSource({ key: top[0].key, sampleUrl: top[0].sampleUrl })?.label ?? null;
+  }
+  if (!label) {
+    const cap = capabilities.find((c) =>
+      kw.some((k) => c.path.toLowerCase().includes(k) || c.label.toLowerCase().includes(k)),
+    );
+    label = cap?.label ?? null;
+  }
+
+  let pageUrl = pageUrlHint?.trim() || null;
+  if (!pageUrl && top[0]) {
+    pageUrl = guessPageUrl(top[0].sampleUrl || top[0].url, label);
+  }
+  if (!pageUrl) {
+    const cap = capabilities.find((c) => c.label === label) || capabilities[0];
+    if (cap) pageUrl = guessPageUrl(cap.sampleUrl, cap.label);
+  }
+
+  return { pageUrl, endpoints, label };
+}
+
+function guessPageUrl(sampleUrl: string, label: string | null): string | null {
+  try {
+    const u = new URL(sampleUrl);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "linkedin.com" || host.endsWith(".linkedin.com")) {
+      if (label === "New message") return "https://www.linkedin.com/messaging/";
+      if (label === "New notification") return "https://www.linkedin.com/notifications/";
+      return "https://www.linkedin.com/feed/";
+    }
+    return `${u.protocol}//${u.host}/`;
+  } catch {
+    return null;
+  }
 }
 
 export const perceiver = new Perceiver();
