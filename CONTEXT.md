@@ -135,8 +135,8 @@ candidate identity (request-URL stamp fix landed).
 
 | Path | Role | Status |
 |------|------|--------|
-| `daemon/` | Bridge · ingest · catalog · Tama MCP · watch | ✅ Hub + control + Unbrowse ingest |
-| `har-recorder/` | Ambient capture + **integration harness** | 🚧 Capture→daemon; harness open-tab next |
+| `daemon/` | Bridge · ingest · catalog · Tama MCP · watch | ✅ Hub + control + Unbrowse ingest + LinkedIn defaults |
+| `har-recorder/` | Ambient capture + **integration harness** | ✅ Capture→daemon; open/focus tab on `watch` |
 | `demo/` | Pet viewer | ✅ |
 | ~~`extension/`~~ | WXT | ❌ Deleted |
 
@@ -161,9 +161,10 @@ candidate identity (request-URL stamp fix landed).
 - [x] Document ambient funnel + “LLM only on shortlist”
 - [x] Extract LinkedIn GraphQL / DecoratedEvent DMs + response request-URL stamp
 - [x] **Plan locked:** extension = modular harness; LinkedIn first proof module
+- [x] Harness: `IntegrationModule` + linkedin proof → open/focus tab on `watch`
+- [x] Daemon LinkedIn defaults so `create_listener` always ships `pageUrl`
 
 ### Next
-- [ ] Harness: `IntegrationModule` + linkedin proof → open/focus tab on `watch`
 - [ ] Popup: richer Tama UI (candidates, listeners list)
 - [ ] Live E2E: `create_listener` → LinkedIn tab → ambient → `wait_for_event` on DM
 - [ ] Second module only when needed (same harness interface)
