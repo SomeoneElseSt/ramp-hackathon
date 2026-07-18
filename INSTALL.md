@@ -39,15 +39,13 @@ npm install
 4. Confirm the card shows **Tama** version **0.4.2**. If already loaded: **Reload**.
 5. Open the Tama popup → status should move toward **Daemon live** once the MCP/daemon process is up. Click **Sit on this window** on a LinkedIn tab (or let `create_listener` open messaging).
 
-### Start the daemon (two valid modes)
+### Start the daemon — **one owner of :8787**
 
-**A — Agent drives it (usual):** Cursor/Codex starts `daemon/` via MCP config below. That process binds `ws://localhost:8787` *and* speaks MCP on stdio. Do **not** also run `npm run dev` in another terminal (port conflict).
+**When Cursor MCP `tama` is enabled: Cursor owns the daemon.** That one process binds `ws://localhost:8787` *and* speaks MCP on stdio.
 
-**B — Manual / demo:** keep a bridge up without an agent:
-
-```bash
-cd daemon && npm run dev   # WS on :8787; MCP stdio idle until a client attaches
-```
+- **NEVER** run `npm run dev`, `ops-listen`, or a second daemon while Cursor MCP tama is enabled — double-bind → `EADDRINUSE` → MCP dies mid-handshake.
+- If the port is stuck: `lsof -i :8787` → kill that PID → **Reload MCP** in Cursor.
+- Manual demo only when MCP is **disabled**: `cd daemon && npm run dev`
 
 Popup should read **Daemon live**. Watched tabs show a soft “Tama is listening” overlay (v0.4.2+).
 
@@ -59,21 +57,21 @@ Replace `/ABS/PATH/to/ramp-hackathon` with your real absolute path.
 
 ### Cursor
 
-Cursor Settings → MCP, or project `.cursor/mcp.json`:
+Prefer `~/.cursor/mcp.json` (or project `.cursor/mcp.json`) with an **absolute** path to `index.ts` so cwd flakiness cannot break spawn:
 
 ```json
 {
   "mcpServers": {
     "tama": {
       "command": "npx",
-      "args": ["tsx", "src/index.ts"],
+      "args": ["tsx", "/ABS/PATH/to/ramp-hackathon/daemon/src/index.ts"],
       "cwd": "/ABS/PATH/to/ramp-hackathon/daemon"
     }
   }
 }
 ```
 
-Restart Cursor (or reload MCP) after editing. Confirm tools: `create_listener`, `wait_for_event`, `list_listeners`, …
+**Reload MCP once** after editing (do not also start `npm run dev`). Confirm tools: `create_listener`, `wait_for_event`, `list_listeners`, …
 
 ### Codex (CLI / IDE / ChatGPT desktop Codex host)
 

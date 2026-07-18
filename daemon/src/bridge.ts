@@ -22,103 +22,111 @@ const recorders = new Set<WebSocket>();
 
 const WS_PING_MS = Number(process.env.REFLEX_WS_PING_MS ?? 25_000);
 
-export function startBridge(): void {
-  // Bridge stays up for the process lifetime — do not tear down recorders or
-  // listeners when an MCP wait_for_event returns; only remove_listener / unwatch.
-  // One process owns both WS + MCP (Cursor MCP spawn). If :8787 is already taken,
-  // fail clearly — do not crash unhandled, and do not start a second bridge.
-  const wss = new WebSocketServer({ port: WS_PORT });
+/**
+ * Bind the WS bridge. Resolves only after listen succeeds.
+ * On EADDRINUSE: one clear stderr line + process.exit(1) — never leaves MCP
+ * half-connected. Cursor MCP must be the sole owner of :8787.
+ */
+export function startBridge(): Promise<void> {
+  return new Promise((resolve) => {
+    // Bridge stays up for the process lifetime — do not tear down recorders or
+    // listeners when an MCP wait_for_event returns; only remove_listener / unwatch.
+    const wss = new WebSocketServer({ port: WS_PORT });
 
-  wss.on("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE") {
-      console.error(
-        `[tama] WS bridge port ${WS_PORT} already in use. ` +
-          `Stop the other daemon (\`lsof -i :${WS_PORT}\` then kill) — ` +
-          `do not run \`npm run dev\` while Cursor MCP owns the port.`,
-      );
-      process.exit(1);
-    }
-    console.error(`[tama] WS bridge error:`, err);
-    process.exit(1);
-  });
+    wss.once("listening", () => {
+      log(`WS bridge listening on ws://localhost:${WS_PORT}`);
+      resolve();
+    });
 
-  wss.on("connection", (socket) => {
-    let role: "recorder" | "viewer" | null = null;
-
-    // Protocol-level ping keeps NAT / idle proxies from dropping long watches.
-    const pingTimer = setInterval(() => {
-      if (socket.readyState === WebSocket.OPEN) socket.ping();
-      else clearInterval(pingTimer);
-    }, WS_PING_MS);
-
-    socket.on("message", async (raw) => {
-      const msg = parse(raw.toString());
-      if (!msg) return;
-
-      // Extension keepalive (Chrome SW idle reset) — not an activity event.
-      if (isPing(msg)) return;
-
-      // First message must be the role handshake.
-      if (role === null && isRole(msg)) {
-        role = msg.role;
-        if (role === "viewer") {
-          viewers.add(socket);
-        } else {
-          recorders.add(socket);
-          // Sync current watches so a late-connecting / reconnected extension catches up.
-          sendControl(socket, {
-            kind: "listeners",
-            payload: { active: perceiver.listWatches() },
-          });
-        }
-        log(`client connected as ${role}`);
-        return;
+    wss.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(
+          `[tama] port ${WS_PORT} already in use — kill the other owner ` +
+            `(\`lsof -i :${WS_PORT}\`) then reload MCP. ` +
+            `NEVER run \`npm run dev\` / ops-listen while Cursor MCP tama is enabled.`,
+        );
+        process.exit(1);
       }
-
-      if (role === "recorder") await handleActivityEvent(msg as ActivityEvent);
-      // viewers never send events (CONTRACT §0).
+      console.error(`[tama] WS bridge error:`, err);
+      process.exit(1);
     });
 
-    socket.on("close", () => {
-      clearInterval(pingTimer);
-      viewers.delete(socket);
-      recorders.delete(socket);
-      // Recorders leaving does NOT remove listeners — MCP / catalog persists.
+    wss.on("connection", (socket) => {
+      let role: "recorder" | "viewer" | null = null;
+
+      // Protocol-level ping keeps NAT / idle proxies from dropping long watches.
+      const pingTimer = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) socket.ping();
+        else clearInterval(pingTimer);
+      }, WS_PING_MS);
+
+      socket.on("message", async (raw) => {
+        const msg = parse(raw.toString());
+        if (!msg) return;
+
+        // Extension keepalive (Chrome SW idle reset) — not an activity event.
+        if (isPing(msg)) return;
+
+        // First message must be the role handshake.
+        if (role === null && isRole(msg)) {
+          role = msg.role;
+          if (role === "viewer") {
+            viewers.add(socket);
+          } else {
+            recorders.add(socket);
+            // Sync current watches so a late-connecting / reconnected extension catches up.
+            sendControl(socket, {
+              kind: "listeners",
+              payload: { active: perceiver.listWatches() },
+            });
+          }
+          log(`client connected as ${role}`);
+          return;
+        }
+
+        if (role === "recorder") await handleActivityEvent(msg as ActivityEvent);
+        // viewers never send events (CONTRACT §0).
+      });
+
+      socket.on("close", () => {
+        clearInterval(pingTimer);
+        viewers.delete(socket);
+        recorders.delete(socket);
+        // Recorders leaving does NOT remove listeners — MCP / catalog persists.
+      });
+      socket.on("error", () => {
+        clearInterval(pingTimer);
+        viewers.delete(socket);
+        recorders.delete(socket);
+      });
     });
-    socket.on("error", () => {
-      clearInterval(pingTimer);
-      viewers.delete(socket);
-      recorders.delete(socket);
+
+    // Broadcast every perceived semantic event to viewers (drives the pet).
+    perceiver.emitter.on("semantic", (payload) => {
+      broadcastViewer({ kind: "semantic", payload });
     });
-  });
 
-  // Broadcast every perceived semantic event to viewers (drives the pet).
-  perceiver.emitter.on("semantic", (payload) => {
-    broadcastViewer({ kind: "semantic", payload });
-  });
+    // Push listener control plane to recorders (extension open-tab / watch UX).
+    perceiver.emitter.on("watch", (payload: ListenerWatch) => {
+      broadcastRecorder({ kind: "watch", payload });
+      log(`→ recorders watch ${payload.subId} pageUrl=${payload.pageUrl ?? "—"}`);
+    });
+    perceiver.emitter.on("unwatch", (payload: { subId: string }) => {
+      broadcastRecorder({ kind: "unwatch", payload });
+      log(`→ recorders unwatch ${payload.subId}`);
+    });
+    perceiver.emitter.on("listeners", (active: ListenerWatch[]) => {
+      broadcastRecorder({ kind: "listeners", payload: { active } });
+    });
 
-  // Push listener control plane to recorders (extension open-tab / watch UX).
-  perceiver.emitter.on("watch", (payload: ListenerWatch) => {
-    broadcastRecorder({ kind: "watch", payload });
-    log(`→ recorders watch ${payload.subId} pageUrl=${payload.pageUrl ?? "—"}`);
+    // Represent the screenshot-polling baseline agent for the side-by-side demo.
+    if (POLL_INTERVAL_MS > 0) {
+      setInterval(
+        () => broadcastViewer({ kind: "poll", payload: { agent: "baseline" } }),
+        POLL_INTERVAL_MS,
+      );
+    }
   });
-  perceiver.emitter.on("unwatch", (payload: { subId: string }) => {
-    broadcastRecorder({ kind: "unwatch", payload });
-    log(`→ recorders unwatch ${payload.subId}`);
-  });
-  perceiver.emitter.on("listeners", (active: ListenerWatch[]) => {
-    broadcastRecorder({ kind: "listeners", payload: { active } });
-  });
-
-  // Represent the screenshot-polling baseline agent for the side-by-side demo.
-  if (POLL_INTERVAL_MS > 0) {
-    setInterval(
-      () => broadcastViewer({ kind: "poll", payload: { agent: "baseline" } }),
-      POLL_INTERVAL_MS,
-    );
-  }
-
-  log(`WS bridge listening on ws://localhost:${WS_PORT}`);
 }
 
 async function handleActivityEvent(event: ActivityEvent): Promise<void> {

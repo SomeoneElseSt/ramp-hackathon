@@ -44,7 +44,8 @@ npm run dev            # WS bridge on ws://localhost:8787 + MCP over stdio
 ```
 
 When Cursor/Codex launches this via MCP config, **that same process** owns `:8787`.
-Do not also run `npm run dev` in parallel (port conflict).
+**NEVER** run `npm run dev` / ops-listen in parallel while MCP tama is enabled — exclusive ownership.
+Startup order is bridge-listen-first, then MCP connect (no half-state on EADDRINUSE).
 
 `OPENAI_API_KEY` (repo-root `.env`) enables the model-assisted extraction
 fallback. Without it, the deterministic heuristic path still works.
