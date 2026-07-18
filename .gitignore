@@ -6,3 +6,6 @@ dist/
 
 # local tool state (never commit)
 .gstack/
+
+# ops listen runtime status
+daemon/test/LISTENING_ARMED.txt

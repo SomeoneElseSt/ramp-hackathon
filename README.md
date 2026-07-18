@@ -157,18 +157,21 @@ Daemon → agent (MCP):     { type, source, ts, from, to, text, evidence }  // r
 
 ## Installation & setup
 
+**Prod = latest `master`** (no separate deploy). Extension version is in
+`har-recorder/manifest.json` (currently **0.4.2**).
+
 ### Prerequisites
 
 - **Node.js 18+** and npm
 - **Chrome** (or Arc) with Developer mode
 
-### 1. Load the extension
+### 1. Get the code
 
-1. `chrome://extensions` → enable **Developer mode**.
-2. **Load unpacked** → select this folder.
-3. Open the popup: choose scope (**current window** or **selected tabs**) → **Start**.
-
-Recording attaches Chrome's debugger to in-scope tabs (you will see the yellow "being debugged" banner, unavoidable with CDP) and injects the capture content script.
+```bash
+git clone https://github.com/SomeoneElseSt/ramp-hackathon.git
+cd ramp-hackathon
+# or: git pull --rebase origin master
+```
 
 ### 2. Run the daemon + MCP server
 
@@ -177,18 +180,29 @@ cd daemon
 npm install
 npm run dev
 # WS bridge:  ws://localhost:8787
-# MCP:        stdio (add to your MCP client config)
+# MCP:        stdio (add to your MCP client config — see daemon/README.md)
 ```
 
-### 3. Point an agent at it
+### 3. Load the extension
 
-Add the Tama MCP server to your MCP client config, then:
+1. `chrome://extensions` → enable **Developer mode**.
+2. **Load unpacked** → select the `har-recorder/` folder (not the repo root).
+3. If already loaded: click **Reload**, then confirm version **0.4.2** on the card.
+4. Open the Tama popup → **Sit** / ambient on (or let MCP `create_listener` open a tab).
+
+### 4. Point an agent at it
+
+**Full install + Codex paste prompt:** [`INSTALL.md`](./INSTALL.md)
+(MCP JSON/TOML for Cursor and Codex, latency tips, troubleshooting).
+
+Short path — add Tama MCP (`cwd` → `daemon/`), then:
 
 ```
-subscribe({ intent: "new messages", types: ["message.received"] })
-wait_for_event({ subId })   // blocks until a DM actually arrives
+create_listener({ intent: "new LinkedIn messages" })  → { subId }
+wait_for_event({ subId })   // blocks until a new DM arrives
 ```
 
+(`subscribe` is still supported as the CONTRACT alias.)
 ### Offline mode (no daemon, no agent)
 
 Run the perception getter over an exported trace to see exactly what a listener would fire on:

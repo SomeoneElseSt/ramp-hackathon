@@ -61,9 +61,11 @@ browser (authenticated tab)
 
 ## Run it
 
+**Install + Codex LinkedIn DM recipe:** [`INSTALL.md`](./INSTALL.md).
+
 ```bash
 cd daemon && npm install && npm run dev
-# Load unpacked: har-recorder/
+# Load unpacked: har-recorder/ (v0.4.2+)
 open demo/tamagent.html
 ```
 

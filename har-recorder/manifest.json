@@ -1,14 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Tama Agent",
-  "version": "0.1.0",
-  "description": "Give browser agents reflexes. Watches the realtime signals a site already emits and wakes an agent when something happens, at zero model cost while idle.",
+  "minimum_chrome_version": "116",
+  "name": "Tama",
+  "version": "0.4.2",
+  "description": "Tama sits on your authenticated tabs, streams ambient activity to the local daemon, and surfaces active listeners as you work. Nothing leaves your machine.",
   "permissions": [
     "tabs",
     "storage",
     "downloads",
     "scripting",
     "webNavigation",
+    "alarms",
     "sidePanel"
   ],
   "host_permissions": [
@@ -19,8 +21,11 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Tama Agent",
+    "default_title": "Tama",
     "default_popup": "src/popup/popup.html"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
   },
   "content_scripts": [
     {
@@ -36,8 +41,5 @@
       "run_at": "document_idle",
       "all_frames": false
     }
-  ],
-  "side_panel": {
-    "default_path": "src/sidepanel/index.html"
-  }
+  ]
 }

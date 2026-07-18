@@ -51,6 +51,9 @@ export interface Subscription {
   pageUrl: string | null; // site to open / keep watching
   endpoints: string[]; // concrete URL/path templates to listen on
   label: string | null; // human label e.g. "New message"
+  /** Arm watermark — only events with ts >= sinceTs may wake waiters (event-forward, not history scrape). */
+  sinceTs: number;
+  createdAt: number;
   pending: SemanticEvent[]; // matched-but-undelivered events (drained by wait/get_recent)
   waiters: Array<(event: SemanticEvent) => void>;
 }
@@ -64,6 +67,7 @@ export interface ListenerWatch {
   pageUrl: string | null;
   endpoints: string[];
   label: string | null;
+  sinceTs?: number;
 }
 
 // Additive control envelopes the daemon may push to recorder clients (extension).

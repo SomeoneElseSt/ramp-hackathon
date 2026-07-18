@@ -8,10 +8,19 @@ import { log } from "./logger.js";
 loadEnv({ path: resolve(process.cwd(), ".env") });
 loadEnv({ path: resolve(process.cwd(), "../.env") });
 
-// The WS bridge is always up so the extension (recorder) and demo (viewer) can
-// connect. The MCP server shares this process and talks over stdio.
-startBridge();
+// Exclusive ownership: this process binds :8787 AND speaks MCP on stdio.
+// Order matters — bridge must listen successfully BEFORE MCP connects.
+// Never log "Tama MCP connected" then die on EADDRINUSE.
+async function main(): Promise<void> {
+  await startBridge();
+  await startMcpServer();
+}
 
-startMcpServer().catch((err) => {
-  log("MCP server failed to start:", err);
+main().catch((err) => {
+  console.error("[tama] failed to start:", err);
+  process.exit(1);
+});
+
+process.stdin.on("end", () => {
+  log("MCP stdin closed — WS bridge + listeners stay up until process exit");
 });

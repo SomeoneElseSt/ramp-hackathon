@@ -124,6 +124,8 @@ export function createTabTracker({ onEvent, idFn, onAttach, onDetach }) {
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (!recording) return;
     upsertCtx(tab);
+    // Navigations wipe content scripts — allow re-attach + listening overlay.
+    if (changeInfo.url) onDetach(tabId);
     if (inScope(tab) && (changeInfo.status === "complete" || changeInfo.url)) {
       maybeAttach(tab);
     }
@@ -154,5 +156,36 @@ export function createTabTracker({ onEvent, idFn, onAttach, onDetach }) {
     });
   }
 
-  return { start, stop, getCtx, inScope, isRecording: () => recording, scope: () => scope, upsertCtx };
+  /** Ensure a tab is in recording scope and sensors are attached (watch harness). */
+  async function includeTab(tabId) {
+    if (!recording) return false;
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab || isRestrictedUrl(tab.url)) return false;
+    if (scope.mode === "tabs") {
+      scope.tabIds.add(tabId);
+    } else if (scope.mode === "window") {
+      // Expand to tabs mode so a watch-opened tab is always covered.
+      const existing = [...scope.tabIds];
+      const inWindow = (await chrome.tabs.query({ windowId: scope.windowId })).map((t) => t.id);
+      scope = {
+        mode: "tabs",
+        windowId: null,
+        tabIds: new Set([...existing, ...inWindow, tabId].filter(Boolean)),
+      };
+    }
+    upsertCtx(tab);
+    await maybeAttach(tab);
+    return true;
+  }
+
+  return {
+    start,
+    stop,
+    getCtx,
+    inScope,
+    includeTab,
+    isRecording: () => recording,
+    scope: () => scope,
+    upsertCtx,
+  };
 }

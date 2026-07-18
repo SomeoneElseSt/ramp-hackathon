@@ -1,53 +1,56 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
+    <title>Tama</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <header>
-      <h1>Tama Agent</h1>
-      <span id="dot" class="dot idle" title="idle"></span>
-    </header>
+    <div id="tamagent">
+      <header class="brand">
+        <span class="brand-mark">Tama</span>
+        <span class="brand-sub">ambient listen</span>
+      </header>
 
-    <div class="pet-wrap">
-      <div class="pet" id="pet">
-        <div class="pet-screen"><canvas id="petLcd" width="160" height="128"></canvas></div>
-        <div class="pet-nub"><i></i><i></i><i></i></div>
+      <div class="pet" id="pet" title="Tama — tap for details">
+        <div class="screen"><canvas id="lcd" width="200" height="160"></canvas></div>
+        <div class="nub"><i></i><i></i><i></i></div>
       </div>
-      <div class="pet-tag" id="petTag">asleep</div>
+      <div class="tag" id="tag">sleeping</div>
+
+      <div class="panel" id="panel">
+        <p id="statusLine" class="status">Checking…</p>
+
+        <section class="block">
+          <h4>Listeners</h4>
+          <div id="listenerRows"></div>
+          <p id="listenerEmpty" class="muted">
+            None yet — agents arm them via MCP.
+          </p>
+        </section>
+
+        <section class="block" id="eventsBlock">
+          <h4>Wake feed</h4>
+          <div id="events"><p class="muted">Quiet for now</p></div>
+        </section>
+
+        <div class="btn-col">
+          <button class="act" id="start">Sit on this window</button>
+          <button class="act ghost" id="stop" disabled>Pause</button>
+          <button class="act ghost" id="openPanel">▤ Dashboard</button>
+        </div>
+
+        <details class="advanced">
+          <summary>Developer</summary>
+          <p class="muted adv-hint">Local buffer only — not the listen path.</p>
+          <div class="btn-col">
+            <button class="act ghost" id="export">Export HAR</button>
+            <button class="act ghost danger" id="clear">Clear buffer</button>
+          </div>
+        </details>
+      </div>
     </div>
-
-    <div id="status" class="status">Idle</div>
-
-    <fieldset id="scopeBox">
-      <legend>Recording scope</legend>
-      <label><input type="radio" name="scope" value="window" checked /> Current window</label>
-      <label><input type="radio" name="scope" value="tabs" /> Selected tabs</label>
-      <ul id="tabList" class="tablist hidden"></ul>
-    </fieldset>
-
-    <div class="row">
-      <button id="start" class="primary">● Start</button>
-      <button id="stop" disabled>■ Stop</button>
-    </div>
-    <div class="row">
-      <button id="openPanel" class="primary">▤ Dashboard</button>
-    </div>
-
-    <div class="row">
-      <button id="export">Export ▾</button>
-      <button id="clear" class="danger">Clear</button>
-    </div>
-
-    <p class="note">
-      Debugger-free capture: in-page fetch/XHR/WebSocket/SSE interception, so no
-      "being debugged" banner. Events stream to the local daemon on
-      <code>ws://localhost:8787</code>. Export produces
-      <code>network.har</code>, <code>activity-trace.json</code>, and
-      <code>activity-summary.json</code>.
-    </p>
     <script type="module" src="popup.js"></script>
-    <script type="module" src="pet.js"></script>
+    <script type="module" src="sidepanel-open.js"></script>
   </body>
 </html>

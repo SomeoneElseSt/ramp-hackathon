@@ -1,10 +1,11 @@
-# har-recorder
+# har-recorder (Tama extension)
 
-Standalone MV3 recorder extension — captures cross-tab activity and exports it.
-Useful for **inspecting the firehose** a site emits (LinkedIn alone throws
-~1000+ requests + hundreds of console errors per session) while we design what
-the daemon should actually listen for. No daemon/MCP wiring here — it just
-records and exports.
+MV3 extension shipped as **Tama** (`manifest.json` version **0.4.2**). Captures
+cross-tab activity, streams redacted events to the local daemon
+(`ws://localhost:8787`), and obeys `{watch|unwatch|listeners}` from MCP-driven
+`create_listener`. Also exports HAR / activity traces for offline inspection.
+
+**Install + LinkedIn DM wake:** [`../INSTALL.md`](../INSTALL.md).
 
 ## What it captures (debugger-free)
 
@@ -24,17 +25,18 @@ From the popup:
 ## Load it
 
 `chrome://extensions` (or `arc://extensions`) → **Developer mode** → **Load
-unpacked** → this `har-recorder/` folder. Open the popup, pick scope, Record,
-work, Export.
+unpacked** → this **`har-recorder/`** folder (not the repo root). Confirm
+version **0.4.2**. Open the popup → **Sit on this window** with the daemon up
+(Daemon live). Developer export (HAR / traces) is under the popup’s Developer
+section.
 
 ## Layout
 
-- `manifest.json` — MV3, permissions: `tabs, storage, downloads, scripting, webNavigation` (no `debugger`)
-- `src/background/` — service worker + tab tracker
-- `src/content/` — `interceptor.js` (MAIN-world network capture), `relay.js`, `content-script.js` (DOM)
+- `manifest.json` — MV3, permissions: `tabs, storage, downloads, scripting, webNavigation, alarms` (no `debugger`)
+- `src/background/` — service worker, WS to daemon, watch/ambient control
+- `src/content/` — `interceptor.js` (MAIN-world network capture), `relay.js`, `content-script.js`, listening overlay
 - `src/core/` — pure pipeline: normalize · redact · correlate · filter · har · schema · storage
-- `src/popup/` — record / scope / export UI
+- `src/integrations/` — modular site harness (LinkedIn proof first)
+- `src/popup/` — Tama ambient pet UI + Sit / daemon status
 
-> Note: `src/background/index.js` also streams events to a local host if one is
-> running; harmless (drops) when it isn't. That wiring belongs to the daemon
-> lane, not this recorder.
+Streams to `ws://localhost:8787` when the daemon is up; drops quietly when it isn't.
