@@ -6,9 +6,17 @@
   </head>
   <body>
     <header>
-      <h1>Workflow Recorder</h1>
+      <h1>Tama Agent</h1>
       <span id="dot" class="dot idle" title="idle"></span>
     </header>
+
+    <div class="pet-wrap">
+      <div class="pet" id="pet">
+        <div class="pet-screen"><canvas id="petLcd" width="160" height="128"></canvas></div>
+        <div class="pet-nub"><i></i><i></i><i></i></div>
+      </div>
+      <div class="pet-tag" id="petTag">asleep</div>
+    </div>
 
     <div id="status" class="status">Idle</div>
 
@@ -29,12 +37,13 @@
     </div>
 
     <p class="note">
-      Recording attaches Chrome's debugger to in-scope tabs (shows a "being
-      debugged" banner) and injects a capture script. Everything stays local in
-      IndexedDB — nothing is sent anywhere. Export produces
+      Debugger-free capture: in-page fetch/XHR/WebSocket/SSE interception, so no
+      "being debugged" banner. Events stream to the local daemon on
+      <code>ws://localhost:8787</code>. Export produces
       <code>network.har</code>, <code>activity-trace.json</code>, and
       <code>activity-summary.json</code>.
     </p>
     <script type="module" src="popup.js"></script>
+    <script type="module" src="pet.js"></script>
   </body>
 </html>
