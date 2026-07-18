@@ -1,0 +1,2 @@
+[2026-07-18T16:18:31.941Z] [error] WebSocket connection to 'ws://localhost:8787/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-07-18T16:20:49.089Z] [error] WebSocket connection to 'ws://localhost:8787/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED

@@ -1,0 +1,247 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>TamaAgent — corner pet</title>
+<!--
+  TamaAgent, as it actually ships: a small pet pinned to the top-right of the
+  page by the extension's content script. NOT a fullscreen dashboard.
+
+  Collapsed: pet + one-line status. Click it to expand listeners / events /
+  suggested actions.
+
+  States (canonical, per spec):
+    sleeping  listener active, nothing happening, ZERO model calls
+    watching  receiving activity
+    happy     task completed / new event
+    distress  failure detected
+    attention agent needs approval
+
+  The page content behind the widget is a stand-in for whatever site the user
+  is on. Only the #tamagent element ships in the extension.
+-->
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    background:#f4f2ee;color:#1a1a1a;min-height:100vh}
+
+  /* ---- stand-in page content (not part of the extension) ---- */
+  .fake-nav{background:#fff;border-bottom:1px solid #e0ddd7;padding:12px 24px;
+    display:flex;gap:20px;align-items:center;font-size:13px;color:#666}
+  .fake-nav b{color:#0a66c2;font-size:18px}
+  .fake-body{max-width:640px;margin:28px auto;padding:0 20px;display:flex;flex-direction:column;gap:14px}
+  .card{background:#fff;border:1px solid #e0ddd7;border-radius:10px;padding:16px}
+  .card h3{font-size:14px;margin-bottom:6px}
+  .card p{font-size:13px;color:#666}
+  .skel{height:9px;background:#eceae6;border-radius:5px;margin-top:7px}
+  .skel.s{width:55%}
+
+  /* ---- THE WIDGET (this is what ships) ---- */
+  #tamagent{
+    position:fixed;top:16px;right:16px;z-index:2147483647;
+    font:12px/1.35 ui-monospace,"SF Mono",Menlo,monospace;
+    display:flex;flex-direction:column;align-items:flex-end;gap:8px;
+    user-select:none;
+  }
+  .pet{
+    width:104px;padding:9px 9px 11px;border-radius:26px 26px 22px 22px;
+    background:linear-gradient(160deg,#ffa8cd,#e8629b 72%);
+    box-shadow:inset 0 -6px 12px rgba(0,0,0,.22),inset 0 5px 10px rgba(255,255,255,.45),
+      0 6px 18px rgba(0,0,0,.28);
+    cursor:pointer;transition:transform .15s,box-shadow .25s;
+  }
+  .pet:hover{transform:translateY(-2px)}
+  .pet.awake{box-shadow:inset 0 -6px 12px rgba(0,0,0,.22),inset 0 5px 10px rgba(255,255,255,.45),
+    0 0 0 3px rgba(96,165,250,.6),0 6px 22px rgba(96,165,250,.5)}
+  .pet.bad{background:linear-gradient(160deg,#ff9a8a,#e0483a 72%)}
+  .pet.buzz{animation:buzz .38s ease-out}
+  @keyframes buzz{0%,100%{transform:translate(0,0)}25%{transform:translate(-3px,1px) rotate(-2deg)}
+    60%{transform:translate(3px,-1px) rotate(2deg)}}
+
+  .screen{background:#2a2630;border-radius:7px;padding:4px}
+  canvas{display:block;width:100%;image-rendering:pixelated;border-radius:3px;background:#9bbc0f}
+
+  .nub{display:flex;gap:7px;justify-content:center;margin-top:7px}
+  .nub i{width:9px;height:9px;border-radius:50%;background:linear-gradient(180deg,#fff,#cfc9d6);
+    box-shadow:inset 0 -1px 2px rgba(0,0,0,.3)}
+
+  .tag{
+    background:rgba(20,18,26,.92);color:#e9e4f5;padding:4px 9px;border-radius:7px;
+    letter-spacing:.05em;white-space:nowrap;backdrop-filter:blur(6px);
+    box-shadow:0 3px 10px rgba(0,0,0,.3);
+  }
+  .tag.hot{background:#2563eb}
+  .tag.bad{background:#dc2626}
+
+  /* expanded panel */
+  .panel{
+    width:290px;background:rgba(20,18,26,.97);color:#e9e4f5;border-radius:11px;
+    padding:12px;box-shadow:0 12px 34px rgba(0,0,0,.45);backdrop-filter:blur(10px);
+    display:none;flex-direction:column;gap:10px;
+  }
+  .panel.open{display:flex}
+  .panel h4{font-size:10px;letter-spacing:.16em;color:#8a83a3;text-transform:uppercase}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:8px;
+    background:rgba(255,255,255,.05);border-radius:7px;padding:7px 9px;font-size:11px}
+  .row b{font-weight:600}
+  .dot{width:7px;height:7px;border-radius:50%;background:#4ade80;flex:none}
+  .dot.z{background:#8a83a3}
+  .muted{color:#8a83a3;font-size:10px}
+  .ev{border-left:2px solid #2563eb;padding:5px 0 5px 8px;font-size:11px}
+  .ev span{color:#8a83a3;font-size:10px;display:block}
+  .act{background:#2563eb;border:0;color:#fff;font:inherit;font-size:11px;
+    padding:7px;border-radius:7px;cursor:pointer;width:100%}
+  .act.ghost{background:rgba(255,255,255,.08)}
+  .keys{position:fixed;bottom:12px;right:16px;font:11px ui-monospace,monospace;color:#999;z-index:99}
+  kbd{background:#fff;border:1px solid #ddd;border-radius:4px;padding:1px 4px}
+</style>
+
+<div class="fake-nav"><b>in</b><span>Home</span><span>My Network</span><span>Jobs</span><span>Messaging</span></div>
+<div class="fake-body">
+  <div class="card"><h3>Stand-in page content</h3>
+    <p>Only the pet in the top-right corner is the extension. This is whatever site the user happens to be on.</p></div>
+  <div class="card"><div class="skel"></div><div class="skel s"></div></div>
+  <div class="card"><div class="skel"></div><div class="skel s"></div></div>
+  <div class="card"><div class="skel"></div><div class="skel s"></div></div>
+</div>
+
+<div id="tamagent">
+  <div class="pet" id="pet">
+    <div class="screen"><canvas id="lcd" width="200" height="160"></canvas></div>
+    <div class="nub"><i></i><i></i><i></i></div>
+  </div>
+  <div class="tag" id="tag">sleeping</div>
+
+  <div class="panel" id="panel">
+    <div>
+      <h4>Active listeners</h4>
+      <div class="row" style="margin-top:6px">
+        <span><i class="dot"></i> linkedin · new messages</span><b id="hits">0</b>
+      </div>
+      <div class="muted" style="margin-top:5px">deterministic · 0 model calls while idle</div>
+    </div>
+    <div>
+      <h4>Recent events</h4>
+      <div id="events" style="margin-top:6px"><div class="muted">nothing yet</div></div>
+    </div>
+    <div>
+      <h4>Suggested</h4>
+      <div class="muted" style="margin:6px 0">You research the sender and check your calendar after messages like this.</div>
+      <button class="act" id="mk">Create listener + prep context</button>
+      <button class="act ghost" style="margin-top:5px" id="dismiss">Not now</button>
+    </div>
+  </div>
+</div>
+
+<div class="keys"><kbd>E</kbd> event &nbsp;<kbd>W</kbd> watching &nbsp;<kbd>D</kbd> distress &nbsp;<kbd>A</kbd> attention &nbsp;<kbd>S</kbd> sleep</div>
+
+<script>
+// --- 16x16 cat FACE sprites, 'X' = pixel on.
+//     A full-body cat needs 24x24+ to read; at this size the face is the only
+//     thing legible. Filled head, eyes/nose as negative space, whisker dots.
+const CAT={
+  sleeping:[                                   // eyes closed: single slit row
+    "................","..X..........X..","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..",".XXXXXXXXXXXXXX.",".XXXXXXXXXXXXXX.",".XXX..XXXX..XXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
+  watching:[                                   // eyes fully open, 2 rows
+    "................","..X..........X..","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..",".XXXXXXXXXXXXXX.",".XXX..XXXX..XXX.",".XXX..XXXX..XXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
+  happy:[                                      // eyes high + wide open smile
+    "................","..X..........X..","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..",".XXXXXXXXXXXXXX.",".XXX..XXXX..XXX.",".XXXXXXXXXXXXXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX....XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
+  distress:[                                   // X eyes
+    "................","..X..........X..","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..",".XXXXXXXXXXXXXX.",".XXX.XXXXXX.XXX.",".XXXX.XXXX.XXXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
+  attention:[                                  // wide alert eyes, ears perked
+    "..X..........X..","..XX........XX..","..XXX......XXX..","..XXXXXXXXXXXX..",
+    ".XXXXXXXXXXXXXX.",".XXX..XXXX..XXX.",".XXX..XXXX..XXX.",".XXX..XXXX..XXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
+};
+const Z=["XXX","..X",".X.","X..","XXX"], BANG=["X","X","X",".","X"];
+
+const W=20,H=16,LCD="#9bbc0f",INK="#14300f";
+const lcd=document.getElementById("lcd"), ctx=lcd.getContext("2d");
+const blank=()=>Array.from({length:H},()=>Array(W).fill(0));
+function blit(b,s,ox,oy){for(let y=0;y<s.length;y++)for(let x=0;x<s[y].length;x++){
+  if(s[y][x]!=="X")continue;const px=ox+x,py=oy+y;
+  if(px>=0&&px<W&&py>=0&&py<H)b[py][px]=1;}}
+function paint(b){
+  const s=lcd.width/W;
+  ctx.fillStyle=LCD;ctx.fillRect(0,0,lcd.width,lcd.height);
+  ctx.fillStyle="rgba(20,48,15,.06)";
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)ctx.fillRect(x*s+s-1,y*s,1,s);
+  ctx.fillStyle=INK;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(b[y][x])ctx.fillRect(x*s,y*s,s-1,s-1);
+}
+
+const LABEL={sleeping:"sleeping",watching:"watching",happy:"new event",
+  distress:"failure detected",attention:"needs approval"};
+const pet=document.getElementById("pet"), tag=document.getElementById("tag");
+let state="sleeping", frame=0, hits=0;
+
+function draw(){
+  const b=blank();
+  blit(b,CAT[state]||CAT.sleeping,1,0);
+  if(state==="sleeping"){blit(b,Z,17,1+(frame%2));}
+  if(state==="attention"){blit(b,BANG,18,4);}
+  if(state==="happy"){blit(b,BANG,18,3);}
+  paint(b);
+}
+function setState(s,{buzz=false}={}){
+  state=s;
+  tag.textContent=LABEL[s];
+  const hot=s==="happy"||s==="attention", bad=s==="distress";
+  tag.className="tag"+(hot?" hot":bad?" bad":"");
+  pet.classList.toggle("awake",hot);
+  pet.classList.toggle("bad",bad);
+  if(buzz){pet.classList.remove("buzz");void pet.offsetWidth;pet.classList.add("buzz");}
+  draw();
+}
+setInterval(()=>{frame++;draw();},700);
+
+// --- events ---------------------------------------------------------------
+function onEvent(ev){
+  hits++;document.getElementById("hits").textContent=hits;
+  const list=document.getElementById("events");
+  if(hits===1)list.innerHTML="";
+  const d=document.createElement("div");
+  d.className="ev";
+  d.innerHTML=`<b>${ev.from||"someone"}</b><span>${ev.text||"new message"} · ${new Date().toLocaleTimeString()}</span>`;
+  list.prepend(d);
+  setState("happy",{buzz:true});
+  setTimeout(()=>setState("sleeping"),5000);
+}
+
+pet.onclick=()=>document.getElementById("panel").classList.toggle("open");
+document.getElementById("dismiss").onclick=(e)=>{e.stopPropagation();
+  document.getElementById("panel").classList.remove("open");};
+document.getElementById("mk").onclick=(e)=>{e.stopPropagation();
+  setState("watching");tag.textContent="listener created";};
+
+addEventListener("keydown",(e)=>{
+  const k=e.key.toLowerCase();
+  if(k==="e")onEvent({from:"Raphael Husbands",text:"Okay"});
+  if(k==="w")setState("watching");
+  if(k==="d")setState("distress",{buzz:true});
+  if(k==="a")setState("attention",{buzz:true});
+  if(k==="s")setState("sleeping");
+});
+
+// live wiring: same broadcast envelope as CONTRACT.md §0
+try{
+  const ws=new WebSocket("ws://localhost:8787");
+  ws.onopen=()=>ws.send(JSON.stringify({role:"viewer"}));
+  ws.onmessage=(m)=>{const msg=JSON.parse(m.data);
+    if(msg.kind==="semantic")onEvent({from:msg.payload?.from?.name,text:msg.payload?.text});
+    else if(msg.kind==="raw"&&msg.payload?.type==="console.error")setState("distress",{buzz:true});};
+}catch{}
+
+setState("sleeping");
+</script>
