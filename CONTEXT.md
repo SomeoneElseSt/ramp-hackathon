@@ -198,10 +198,15 @@ candidate identity (request-URL stamp fix landed).
 - Redaction OFF (MVP) for bodies — filter **volume**, don’t strip signal yet.
 - One extension: `har-recorder/`. Modules: `har-recorder/src/integrations/`.
 
-## Run
+## Install / Run
+
+Prod = latest `master` (tag `v0.4.2` matches `har-recorder` manifest).
+
 ```bash
+git pull --rebase origin master
 cd daemon && npm install && npm run dev
-# Load unpacked → har-recorder/  (ambient Start, or let MCP watch open a tab)
+# chrome://extensions → Developer mode → Load unpacked → har-recorder/
+# Reload if already loaded; confirm version 0.4.2
 open demo/tamagent.html
 cd daemon && npm run test:ingest && npm run test:tama && npm run test:control
 ```
