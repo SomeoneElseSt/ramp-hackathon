@@ -25,7 +25,22 @@ const WS_PING_MS = Number(process.env.REFLEX_WS_PING_MS ?? 25_000);
 export function startBridge(): void {
   // Bridge stays up for the process lifetime — do not tear down recorders or
   // listeners when an MCP wait_for_event returns; only remove_listener / unwatch.
+  // One process owns both WS + MCP (Cursor MCP spawn). If :8787 is already taken,
+  // fail clearly — do not crash unhandled, and do not start a second bridge.
   const wss = new WebSocketServer({ port: WS_PORT });
+
+  wss.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `[tama] WS bridge port ${WS_PORT} already in use. ` +
+          `Stop the other daemon (\`lsof -i :${WS_PORT}\` then kill) — ` +
+          `do not run \`npm run dev\` while Cursor MCP owns the port.`,
+      );
+      process.exit(1);
+    }
+    console.error(`[tama] WS bridge error:`, err);
+    process.exit(1);
+  });
 
   wss.on("connection", (socket) => {
     let role: "recorder" | "viewer" | null = null;
