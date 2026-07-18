@@ -27,9 +27,10 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "wait_for_event",
-    "Block until the next event matching the subscription arrives, then return the resolved semantic event. This is the reactive primitive — it does not poll.",
+    "Block until the next event matching the subscription arrives, then return the resolved semantic event. This is the reactive primitive — it does not poll. Completing one wait does not remove the listener or close MCP; re-call to wait again.",
     { subId: z.string() },
     async ({ subId }) => {
+      // Listener catalog persists across wait cycles — only remove_listener drops it.
       const pending = perceiver.waitForEvent(subId);
       if (!pending) return errorText(`unknown subId: ${subId}`);
       const event = await pending;

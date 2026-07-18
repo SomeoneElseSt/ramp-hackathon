@@ -27,7 +27,47 @@ async function main(): Promise<void> {
   recorder.send(JSON.stringify({ role: "recorder" }));
   await sleep(200);
 
-  // Seed discovery so pageUrl/endpoints resolve.
+  // Cold start: LinkedIn messaging intent must still get pageUrl + endpoint hints
+  // before any organic discovery (integration defaults).
+  {
+    const coldRes = await client.callTool({
+      name: "create_listener",
+      arguments: { intent: "new LinkedIn messages" },
+    });
+    const cold = JSON.parse(textOf(coldRes)) as {
+      subId: string;
+      pageUrl: string | null;
+      endpoints: string[];
+      keywords: string[];
+      label: string | null;
+    };
+    if (!cold.pageUrl?.includes("linkedin.com/messaging")) {
+      throw new Error(`cold-start missing messaging pageUrl: ${JSON.stringify(cold)}`);
+    }
+    if (!cold.endpoints?.length) {
+      throw new Error(`cold-start missing endpoints: ${JSON.stringify(cold)}`);
+    }
+    if (!cold.keywords?.some((k) => /messag|voyager|graphql/.test(k))) {
+      throw new Error(`cold-start missing messaging keywords: ${JSON.stringify(cold.keywords)}`);
+    }
+    await sleep(300);
+    const coldWatch = controls.find((c) => c.kind === "watch" && c.payload.subId === cold.subId);
+    if (!coldWatch || coldWatch.kind !== "watch") {
+      throw new Error(`cold-start expected watch push for ${cold.subId}`);
+    }
+    if (!coldWatch.payload.pageUrl?.includes("linkedin.com/messaging")) {
+      throw new Error(`cold-start watch missing pageUrl: ${JSON.stringify(coldWatch)}`);
+    }
+    if (!coldWatch.payload.endpoints?.length || !coldWatch.payload.keywords?.length) {
+      throw new Error(`cold-start watch incomplete: ${JSON.stringify(coldWatch.payload)}`);
+    }
+    console.log("cold-start watch ok:", coldWatch.payload.pageUrl, coldWatch.payload.label);
+    await client.callTool({ name: "remove_listener", arguments: { subId: cold.subId } });
+    await sleep(200);
+    controls.length = 0;
+  }
+
+  // Seed discovery so pageUrl/endpoints resolve from traffic too.
   for (let i = 0; i < 30; i++) {
     const ev: ActivityEvent = {
       id: `e_rc_${i}`,
@@ -52,8 +92,14 @@ async function main(): Promise<void> {
     name: "create_listener",
     arguments: { intent: "new LinkedIn messages" },
   });
-  const created = JSON.parse(textOf(createRes)) as { subId: string; pageUrl: string | null };
-  console.log("MCP create_listener:", created.subId, created.pageUrl);
+  const created = JSON.parse(textOf(createRes)) as {
+    subId: string;
+    pageUrl: string | null;
+    endpoints: string[];
+    keywords: string[];
+    label: string | null;
+  };
+  console.log("MCP create_listener:", created.subId, created.pageUrl, created.label);
   await sleep(400);
 
   const watchMsg = controls.find((c) => c.kind === "watch");
@@ -67,7 +113,13 @@ async function main(): Promise<void> {
   if (!watchMsg.payload.endpoints?.length) {
     throw new Error(`watch missing endpoints: ${JSON.stringify(watchMsg)}`);
   }
-  console.log("got watch:", watchMsg.payload.pageUrl, watchMsg.payload.endpoints[0]);
+  if (!watchMsg.payload.keywords?.length) {
+    throw new Error(`watch missing keywords: ${JSON.stringify(watchMsg)}`);
+  }
+  if (!watchMsg.payload.label) {
+    throw new Error(`watch missing label: ${JSON.stringify(watchMsg)}`);
+  }
+  console.log("got watch:", watchMsg.payload.pageUrl, watchMsg.payload.endpoints[0], watchMsg.payload.label);
   if (!syncMsg || syncMsg.kind !== "listeners") {
     console.warn("no listeners sync yet (ok if watch arrived first)");
   }

@@ -6,34 +6,42 @@
   </head>
   <body>
     <header>
-      <h1>Workflow Recorder</h1>
+      <h1>Tama</h1>
       <span id="dot" class="dot idle" title="idle"></span>
     </header>
 
-    <div id="status" class="status">Idle</div>
+    <p id="tagline" class="tagline">Sits on your tabs. Builds listeners as you work.</p>
 
-    <fieldset id="scopeBox">
-      <legend>Recording scope</legend>
-      <label><input type="radio" name="scope" value="window" checked /> Current window</label>
-      <label><input type="radio" name="scope" value="tabs" /> Selected tabs</label>
-      <ul id="tabList" class="tablist hidden"></ul>
-    </fieldset>
+    <div id="status" class="status">Checking…</div>
+
+    <section id="listenersBox" class="panel">
+      <h2>Active listeners</h2>
+      <ul id="listenerList" class="listener-list"></ul>
+      <p id="listenerEmpty" class="empty">None yet — keep working; MCP <code>create_listener</code> or discovery will show up here.</p>
+    </section>
 
     <div class="row">
-      <button id="start" class="primary">● Start</button>
-      <button id="stop" disabled>■ Stop</button>
+      <button id="start" class="primary">Sit on this window</button>
+      <button id="stop" disabled>Pause ambient</button>
     </div>
-    <div class="row">
-      <button id="export">Export ▾</button>
-      <button id="clear" class="danger">Clear</button>
-    </div>
+
+    <details class="advanced">
+      <summary>Advanced capture</summary>
+      <fieldset id="scopeBox">
+        <legend>Scope</legend>
+        <label><input type="radio" name="scope" value="window" checked /> Current window</label>
+        <label><input type="radio" name="scope" value="tabs" /> Selected tabs</label>
+        <ul id="tabList" class="tablist hidden"></ul>
+      </fieldset>
+      <div class="row">
+        <button id="export">Export</button>
+        <button id="clear" class="danger">Clear buffer</button>
+      </div>
+    </details>
 
     <p class="note">
-      Recording attaches Chrome's debugger to in-scope tabs (shows a "being
-      debugged" banner) and injects a capture script. Everything stays local in
-      IndexedDB — nothing is sent anywhere. Export produces
-      <code>network.har</code>, <code>activity-trace.json</code>, and
-      <code>activity-summary.json</code>.
+      Ambient capture stays local and streams to the daemon at
+      <code>ws://localhost:8787</code>. Agents wake on resolved events — not a HAR dump.
     </p>
     <script type="module" src="popup.js"></script>
   </body>

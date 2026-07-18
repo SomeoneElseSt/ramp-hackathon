@@ -75,10 +75,29 @@ async function main(): Promise<void> {
     subId: string;
     pageUrl: string | null;
     endpoints: string[];
+    keywords: string[];
     label: string | null;
   };
   const { subId } = created;
-  console.log("created listener:", subId, "pageUrl=", created.pageUrl, "endpoints=", created.endpoints.length);
+  console.log(
+    "created listener:",
+    subId,
+    "pageUrl=",
+    created.pageUrl,
+    "endpoints=",
+    created.endpoints.length,
+    "label=",
+    created.label,
+  );
+  if (!created.pageUrl?.includes("linkedin.com")) {
+    throw new Error(`create_listener missing LinkedIn pageUrl: ${JSON.stringify(created)}`);
+  }
+  if (!created.endpoints?.length) {
+    throw new Error(`create_listener missing endpoints: ${JSON.stringify(created)}`);
+  }
+  if (!created.keywords?.some((k) => /messag|voyager|graphql/.test(k))) {
+    throw new Error(`create_listener missing messaging keywords: ${JSON.stringify(created.keywords)}`);
+  }
 
   const waitPromise = client.callTool({ name: "wait_for_event", arguments: { subId } });
 

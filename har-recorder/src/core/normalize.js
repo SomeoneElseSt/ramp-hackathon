@@ -10,7 +10,7 @@ import {
   redactValue,
 } from "./redact.js";
 
-const DEFAULT_BODY_LIMIT = 32 * 1024; // 32 KB text-body cap
+const DEFAULT_BODY_LIMIT = 256 * 1024; // 256 KB — GraphQL messaging payloads exceed 32KB
 
 function ctxFields(ctx = {}) {
   return {
@@ -70,9 +70,13 @@ export function networkResponse(idFn, params, ctx, body = null, opts = {}) {
     ...ctxFields(ctx),
     data: {
       requestId: params.requestId,
+      // Critical: stamp the *request* URL here. Envelope url stays page URL.
+      url: params.url != null ? normalizeUrl(params.url) : null,
+      method: params.method || null,
       status: params.status ?? 0,
       statusText: params.statusText || "",
       mimeType: mime,
+      resourceType: params.resourceType || null,
       headers: redactHeaders(params.headers || {}),
       timing: params.timing || null,
       encodedDataLength: params.encodedDataLength ?? null,

@@ -18,6 +18,7 @@ import { buildSummary } from "../core/filter.js";
 import { buildHar } from "../core/har.js";
 import { containsForbiddenHeader } from "../core/redact.js";
 import { SCHEMA_VERSION } from "../core/schema.js";
+import { resolveWatchTarget } from "../integrations/index.js";
 
 // Robust, restart-safe unique id (raw ids need only be unique, not ordered;
 // export sorts by ts). Node tests use a deterministic factory instead.
@@ -31,6 +32,8 @@ function robustIdFactory() {
 const idFn = robustIdFactory();
 
 let recording = false;
+/** @type {Map<string, { subId: string, label: string|null, pageUrl: string|null }>} */
+const activeWatches = new Map();
 
 // ---- live stream to the reflex daemon (CONTRACT.md §0/§1) ------------------
 // The extension IS the laptop sensor. It streams each already-redacted,
@@ -39,30 +42,80 @@ let recording = false;
 // If the daemon isn't running, events queue locally (and IndexedDB still has
 // them for export). All localhost-only. Adds only an outbound WS client; the
 // event envelope is unchanged (CONTRACT §1).
+//
+// Daemon → extension: RecorderControl {watch|unwatch|listeners} opens/attaches
+// a tab in background (no focus steal) via the integration harness.
 const DAEMON_URL = "ws://localhost:8787";
 
-function createDaemonClient(url) {
+// Keep daemon↔extension WS live while ambient/watch is on (Chrome 116+:
+// WS message exchange every ~20s resets the SW idle timer). Reconnect with
+// backoff forever; late connect gets kind:"listeners" resync from the bridge.
+const KEEP_ALIVE_MS = 20_000;
+const KEEP_ALIVE_ALARM = "tama-daemon-keepalive";
+
+function createDaemonClient(url, { onControl, onStatus } = {}) {
   let socket = null;
   let reconnectTimer = null;
+  let keepAliveTimer = null;
+  let backoffMs = 1000;
   const queue = [];
   const MAX_QUEUE = 2000;
 
   function connect() {
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
     try {
       socket = new WebSocket(url);
     } catch (_) {
+      onStatus?.(false);
       return scheduleReconnect();
     }
     socket.addEventListener("open", () => {
+      backoffMs = 1000;
       try { socket.send(JSON.stringify({ role: "recorder" })); } catch (_) {}
       flush();
+      startKeepAlive();
+      onStatus?.(true);
     });
-    socket.addEventListener("close", scheduleReconnect);
+    socket.addEventListener("message", (ev) => {
+      try {
+        const msg = JSON.parse(String(ev.data));
+        if (msg && (msg.kind === "watch" || msg.kind === "unwatch" || msg.kind === "listeners")) {
+          onControl?.(msg);
+        }
+      } catch (_) {}
+    });
+    socket.addEventListener("close", () => {
+      stopKeepAlive();
+      onStatus?.(false);
+      scheduleReconnect();
+    });
     socket.addEventListener("error", () => { try { socket.close(); } catch (_) {} });
   }
   function scheduleReconnect() {
     if (reconnectTimer) return;
-    reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 1000);
+    const delay = backoffMs;
+    backoffMs = Math.min(backoffMs * 2, 15_000);
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, delay);
+  }
+  function startKeepAlive() {
+    stopKeepAlive();
+    // Chrome 116+: exchanging WS messages within 30s keeps the SW (and socket) alive.
+    keepAliveTimer = setInterval(() => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        stopKeepAlive();
+        scheduleReconnect();
+        return;
+      }
+      try { socket.send(JSON.stringify({ type: "ping", ts: Date.now() })); } catch (_) {}
+    }, KEEP_ALIVE_MS);
+  }
+  function stopKeepAlive() {
+    if (keepAliveTimer) {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+    }
   }
   function flush() {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
@@ -71,17 +124,167 @@ function createDaemonClient(url) {
   connect();
 
   return {
+    connected() {
+      return !!(socket && socket.readyState === WebSocket.OPEN);
+    },
+    ensureConnected() {
+      connect();
+    },
     push(ev) {
       if (socket && socket.readyState === WebSocket.OPEN) {
         try { socket.send(JSON.stringify(ev)); return; } catch (_) {}
       }
       queue.push(ev);
       if (queue.length > MAX_QUEUE) queue.shift();
+      connect();
     },
   };
 }
 
-const daemon = createDaemonClient(DAEMON_URL);
+const daemon = createDaemonClient(DAEMON_URL, {
+  onControl: handleRecorderControl,
+  onStatus: () => broadcast(),
+});
+
+async function handleRecorderControl(msg) {
+  if (msg.kind === "watch") {
+    await onWatch(msg.payload);
+    return;
+  }
+  if (msg.kind === "unwatch") {
+    activeWatches.delete(msg.payload?.subId);
+    updateListeningBadge();
+    broadcast();
+    return;
+  }
+  if (msg.kind === "listeners") {
+    const active = msg.payload?.active || [];
+    activeWatches.clear();
+    for (const w of active) {
+      if (w?.subId) await onWatch(w);
+    }
+    updateListeningBadge();
+    broadcast();
+  }
+}
+
+/**
+ * Integration harness entry: ensure ambient capture + open pageUrl in background.
+ * Never steals focus — silent attach to an existing tab, or create inactive.
+ * @param {object} watch ListenerWatch from daemon
+ */
+async function onWatch(watch) {
+  if (!watch?.subId) return;
+
+  const target = resolveWatchTarget(watch);
+  activeWatches.set(watch.subId, {
+    subId: watch.subId,
+    label: watch.label || target.moduleId || null,
+    pageUrl: target.pageUrl,
+  });
+
+  if (!target.openTab || !target.pageUrl || isRestrictedUrl(target.pageUrl)) {
+    updateListeningBadge();
+    broadcast();
+    return;
+  }
+
+  try {
+    const tab = await openTabInBackground(target.pageUrl);
+    if (tab?.id != null) {
+      if (!recording) {
+        recording = true;
+        const scope = { mode: "tabs", tabIds: [tab.id] };
+        await setMeta("recording", true);
+        await setMeta("startedAt", Date.now());
+        await setMeta("scope", scope);
+        await tabs.start(scope);
+      } else {
+        await tabs.includeTab(tab.id);
+        const s = tabs.scope();
+        await setMeta("scope", {
+          mode: s.mode,
+          windowId: s.windowId ?? null,
+          tabIds: [...(s.tabIds || [])],
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("[tama] watch open-tab failed", err);
+  }
+
+  updateListeningBadge();
+  broadcast();
+}
+
+/** Open/attach silently — no active tab switch, no window focus. */
+async function openTabInBackground(pageUrl) {
+  let origin;
+  try {
+    origin = new URL(pageUrl).origin;
+  } catch {
+    return null;
+  }
+  const existing = await chrome.tabs.query({ url: `${origin}/*` });
+  // Prefer a tab already on a path prefix of pageUrl (e.g. /messaging/).
+  let pathPrefix = "/";
+  try {
+    pathPrefix = new URL(pageUrl).pathname.replace(/\/$/, "") || "/";
+  } catch (_) {}
+  const ranked = existing
+    .filter((t) => t.id != null && !isRestrictedUrl(t.url))
+    .sort((a, b) => {
+      const aHit = (a.url || "").includes(pathPrefix) ? 1 : 0;
+      const bHit = (b.url || "").includes(pathPrefix) ? 1 : 0;
+      return bHit - aHit;
+    });
+  if (ranked[0]) {
+    const tab = ranked[0];
+    // Silent attach: do NOT activate tab or focus window.
+    // If wrong path (feed vs messaging), navigate in place without activating.
+    if (pathPrefix !== "/" && !(tab.url || "").includes(pathPrefix)) {
+      await chrome.tabs.update(tab.id, { url: pageUrl, active: false });
+    }
+    return tab;
+  }
+  return chrome.tabs.create({ url: pageUrl, active: false });
+}
+
+function updateListeningBadge() {
+  const n = activeWatches.size;
+  const first = n > 0 ? [...activeWatches.values()][0] : null;
+  const label = first?.label || "listen";
+  try {
+    if (n === 0) {
+      chrome.action.setBadgeText({ text: "" });
+      chrome.action.setTitle({ title: "Tama" });
+    } else {
+      chrome.action.setBadgeText({ text: n > 1 ? String(n) : "ON" });
+      chrome.action.setBadgeBackgroundColor({ color: "#1a7f4b" });
+      chrome.action.setTitle({
+        title: n === 1 ? `Tama listening: ${label}` : `Tama listening: ${n} listeners`,
+      });
+    }
+  } catch (_) {}
+  syncKeepAliveAlarm();
+}
+
+/** Alarm backup so SW wakes if setInterval heartbeat was cleared after suspend. */
+function syncKeepAliveAlarm() {
+  const needLive = recording || activeWatches.size > 0;
+  try {
+    if (needLive) {
+      chrome.alarms.create(KEEP_ALIVE_ALARM, { periodInMinutes: 0.5 }); // ~30s floor in Chrome
+    } else {
+      chrome.alarms.clear(KEEP_ALIVE_ALARM);
+    }
+  } catch (_) {}
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== KEEP_ALIVE_ALARM) return;
+  daemon.ensureConnected();
+});
 
 // ---- storage sink (redaction already applied in normalize) -----------------
 async function store(ev) {
@@ -139,14 +342,47 @@ function ctxOf(sender) {
 function pageCaptureToEvents(rec, ctx) {
   if (rec.kind === "http") {
     const rid = idFn();
+    const url = absoluteUrl(rec.url, ctx.url);
+    const method = rec.method || "GET";
     return [
-      N.networkRequest(idFn, { ts: rec.ts, requestId: rid, method: rec.method || "GET", url: rec.url, resourceType: "Fetch", headers: {}, initiator: {} }, ctx),
-      N.networkResponse(idFn, { ts: rec.ts, requestId: rid, status: rec.status ?? 0, mimeType: rec.ct || "", headers: {} }, ctx, rec.body ? { text: rec.body, base64Encoded: false, mimeType: rec.ct || "" } : null),
+      N.networkRequest(
+        idFn,
+        { ts: rec.ts, requestId: rid, method, url, resourceType: "Fetch", headers: {}, initiator: {} },
+        ctx,
+      ),
+      N.networkResponse(
+        idFn,
+        {
+          ts: rec.ts,
+          requestId: rid,
+          method,
+          url,
+          status: rec.status ?? 0,
+          mimeType: rec.ct || "",
+          resourceType: "Fetch",
+          headers: {},
+        },
+        ctx,
+        rec.body ? { text: rec.body, base64Encoded: false, mimeType: rec.ct || "" } : null,
+      ),
     ];
   }
-  if (rec.kind === "sse") return [N.sseMessage(idFn, { ts: rec.ts, requestId: null, url: rec.url, data: rec.data }, ctx)];
-  if (rec.kind === "ws") return [N.webSocketFrame(idFn, { ts: rec.ts, direction: rec.dir, payload: rec.data }, ctx)];
+  if (rec.kind === "sse") {
+    return [N.sseMessage(idFn, { ts: rec.ts, requestId: null, url: absoluteUrl(rec.url, ctx.url), data: rec.data }, ctx)];
+  }
+  if (rec.kind === "ws") {
+    return [N.webSocketFrame(idFn, { ts: rec.ts, direction: rec.dir, payload: rec.data, requestId: null }, ctx)];
+  }
   return [];
+}
+
+function absoluteUrl(url, base) {
+  if (!url) return url;
+  try {
+    return new URL(url, base || undefined).href;
+  } catch {
+    return url;
+  }
 }
 
 // ---- content-script DOM events + page captures -----------------------------
@@ -173,6 +409,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           entryCount: await countEvents(),
           attached: [...injectedTabs],
           schemaVersion: SCHEMA_VERSION,
+          listening: [...activeWatches.values()],
+          daemonConnected: daemon.connected(),
         });
         break;
       case "start": {
@@ -182,6 +420,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await setMeta("startedAt", Date.now());
         await setMeta("recording", true);
         await tabs.start(scope);
+        syncKeepAliveAlarm();
+        daemon.ensureConnected();
         broadcast();
         sendResponse({ ok: true, scope });
         break;
@@ -195,6 +435,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.query({}, (all) => {
           for (const t of all) chrome.tabs.sendMessage(t.id, { type: "wf-stop" }).catch(() => {});
         });
+        syncKeepAliveAlarm();
         broadcast();
         sendResponse({ ok: true });
         break;
@@ -248,13 +489,15 @@ function buildArtifacts(events) {
 }
 
 // If the worker restarts mid-recording, restore the flag (attachments are
-// re-established lazily as events arrive / tabs update).
+// re-established lazily as events arrive / tabs update). Daemon reconnect
+// receives kind:"listeners" and re-arms watches via handleRecorderControl.
 (async () => {
-  const started = await getMeta("startedAt", null);
   const scope = await getMeta("scope", null);
   const wasRecording = await getMeta("recording", false);
   if (wasRecording && scope) {
     recording = true;
     await tabs.start(normalizeScope(scope)).catch(() => {});
   }
+  syncKeepAliveAlarm();
+  daemon.ensureConnected();
 })();
