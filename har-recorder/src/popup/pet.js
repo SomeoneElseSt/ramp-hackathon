@@ -139,3 +139,18 @@ function init() {
   sync();
   setInterval(sync, 1200);
 }
+
+// Open the side-panel dashboard. sidePanel.open() requires a user gesture, and
+// a click inside the popup counts as one.
+const openBtn = document.getElementById("openPanel");
+if (openBtn) {
+  openBtn.onclick = async () => {
+    try {
+      const win = await chrome.windows.getCurrent();
+      await chrome.sidePanel.open({ windowId: win.id });
+      window.close();
+    } catch (e) {
+      console.error("[tama] side panel open failed", e);
+    }
+  };
+}

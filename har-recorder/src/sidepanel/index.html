@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="panel.css" />
+    <title>Tama Agent</title>
+  </head>
+  <body>
+    <header>
+      <h1>Tama Agent</h1>
+      <span class="dot" id="dot" title="daemon"></span>
+    </header>
+
+    <div class="pet-wrap">
+      <div class="pet" id="pet">
+        <div class="pet-screen"><canvas id="petLcd" width="160" height="128"></canvas></div>
+        <div class="pet-nub"><i></i><i></i><i></i></div>
+      </div>
+      <div class="pet-tag" id="petTag">asleep</div>
+    </div>
+
+    <section>
+      <h2>Perception funnel</h2>
+      <div class="funnel">
+        <div class="fcell"><b id="fRaw">0</b><span>RAW SEEN</span></div>
+        <div class="farrow">→</div>
+        <div class="fcell"><b id="fUseful">0</b><span>USEFUL</span></div>
+        <div class="farrow">→</div>
+        <div class="fcell hot"><b id="fFired">0</b><span>FIRED</span></div>
+      </div>
+      <p class="muted" id="fNote">Idle. Everything below is measured from the live stream.</p>
+    </section>
+
+    <section>
+      <h2>What you've done</h2>
+      <div id="sources"><p class="muted">No activity yet.</p></div>
+    </section>
+
+    <section>
+      <h2>Events</h2>
+      <div id="events"><p class="muted">Nothing fired yet.</p></div>
+    </section>
+
+    <footer id="foot">daemon: connecting…</footer>
+
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>
