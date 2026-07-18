@@ -12,6 +12,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const STATUS_PATH = resolve(process.cwd(), "test/LISTENING_ARMED.txt");
+/** MCP SDK defaults to 60s; wait_for_event must block indefinitely for prolonged listen. */
+const WAIT_TIMEOUT_MS = Number(process.env.OPS_LISTEN_TIMEOUT_MS ?? 24 * 60 * 60 * 1000);
 
 function textOf(res: unknown): string {
   const content = (res as { content?: Array<{ text?: string }> }).content;
@@ -77,10 +79,11 @@ async function main(): Promise<void> {
   // Stay up: re-arm wait_for_event after every wake. Listener remains registered.
   for (;;) {
     console.log(`[ops] waiting… (wakes so far: ${wakeCount})`);
-    const result = await client.callTool({
-      name: "wait_for_event",
-      arguments: { subId: created.subId },
-    });
+    const result = await client.callTool(
+      { name: "wait_for_event", arguments: { subId: created.subId } },
+      undefined,
+      { timeout: WAIT_TIMEOUT_MS },
+    );
     wakeCount += 1;
     const payload = textOf(result);
     console.log(`[ops] WAKE #${wakeCount} — wait_for_event returned:`);
