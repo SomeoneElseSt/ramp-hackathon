@@ -32,30 +32,56 @@ const idFn = robustIdFactory();
 
 let recording = false;
 
-// ---- live stream to the local listener host --------------------------------
-// The extension IS the laptop sensor: it streams captured events to a local
-// companion (server/server.js) that hosts listeners + the MCP bridge, so
-// listeners fire in real time. If the host isn't running, events are dropped
-// from the stream (IndexedDB still has them for export). All localhost-only.
-let STREAM_URL = "http://127.0.0.1:7345/ingest";
-let streamBatch = [];
-let streamTimer = null;
-function streamEvent(ev) {
-  streamBatch.push(ev);
-  if (streamTimer) return;
-  streamTimer = setTimeout(flushStream, 400);
-}
-async function flushStream() {
-  streamTimer = null;
-  if (!streamBatch.length) return;
-  const events = streamBatch;
-  streamBatch = [];
-  try {
-    await fetch(STREAM_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ events }) });
-  } catch (_) {
-    // host not running — fine; capture still persists locally
+// ---- live stream to the reflex daemon (CONTRACT.md §0/§1) ------------------
+// The extension IS the laptop sensor. It streams each already-redacted,
+// already-normalized activity event to the local daemon over
+// ws://localhost:8787 as role "recorder", so listeners fire in real time.
+// If the daemon isn't running, events queue locally (and IndexedDB still has
+// them for export). All localhost-only. Adds only an outbound WS client; the
+// event envelope is unchanged (CONTRACT §1).
+const DAEMON_URL = "ws://localhost:8787";
+
+function createDaemonClient(url) {
+  let socket = null;
+  let reconnectTimer = null;
+  const queue = [];
+  const MAX_QUEUE = 2000;
+
+  function connect() {
+    try {
+      socket = new WebSocket(url);
+    } catch (_) {
+      return scheduleReconnect();
+    }
+    socket.addEventListener("open", () => {
+      try { socket.send(JSON.stringify({ role: "recorder" })); } catch (_) {}
+      flush();
+    });
+    socket.addEventListener("close", scheduleReconnect);
+    socket.addEventListener("error", () => { try { socket.close(); } catch (_) {} });
   }
+  function scheduleReconnect() {
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 1000);
+  }
+  function flush() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    for (const ev of queue.splice(0)) socket.send(JSON.stringify(ev));
+  }
+  connect();
+
+  return {
+    push(ev) {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        try { socket.send(JSON.stringify(ev)); return; } catch (_) {}
+      }
+      queue.push(ev);
+      if (queue.length > MAX_QUEUE) queue.shift();
+    },
+  };
 }
+
+const daemon = createDaemonClient(DAEMON_URL);
 
 // ---- storage sink (redaction already applied in normalize) -----------------
 async function store(ev) {
@@ -66,7 +92,7 @@ async function store(ev) {
     ev = { ...ev, data: { ...ev.data, headers: (ev.data.headers || []).filter((x) => !containsForbiddenHeader([x])) } };
   }
   await appendEvent(ev);
-  streamEvent(ev); // feed the local listener host in real time
+  daemon.push(ev); // feed the reflex daemon in real time (CONTRACT §1)
   broadcast();
 }
 
