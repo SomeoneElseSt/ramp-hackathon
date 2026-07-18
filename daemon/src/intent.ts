@@ -15,7 +15,8 @@ interface IntentDomain {
 const DOMAINS: IntentDomain[] = [
   {
     triggers: ["message", "dm", "chat", "inbox", "conversation", "reply", "text"],
-    keywords: ["messag", "conversation", "thread", "inbox", "chat", "dm"],
+    // voyager/messenger/graphql help LinkedIn GraphQL + MessagingGraphQL URL match
+    keywords: ["messag", "conversation", "thread", "inbox", "chat", "dm", "voyager", "messenger", "graphql"],
     type: "message.received",
   },
   {

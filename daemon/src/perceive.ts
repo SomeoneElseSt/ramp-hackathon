@@ -11,6 +11,7 @@ import {
 } from "./catalog.js";
 import { recommendWorkflows, type WorkflowRecommendation } from "./workflows.js";
 import { shouldIngest } from "./ingest.js";
+import { applyIntegrationDefaults } from "./integrations/index.js";
 import { log } from "./logger.js";
 import { describeSource } from "./functionality.js";
 
@@ -105,21 +106,22 @@ class Perceiver {
     const candidates = collectEndpointCandidates(this.raw);
     const plan = await refinePlanWithLLM(intent, base, candidates);
     const matched = pickWatchTargets(candidates, plan.keywords, catalog.list(), pageUrl);
+    const filled = applyIntegrationDefaults(intent, matched);
     const subId = "sub_" + Math.abs(hashCode(intent + this.subscriptions.size)).toString(36);
     const sub: Subscription = {
       subId,
       intent,
       types: types && types.length > 0 ? types : plan.types,
       keywords: plan.keywords,
-      pageUrl: matched.pageUrl,
-      endpoints: matched.endpoints,
-      label: matched.label,
+      pageUrl: filled.pageUrl,
+      endpoints: filled.endpoints,
+      label: filled.label,
       pending: [],
       waiters: [],
     };
     this.subscriptions.set(subId, sub);
     log(
-      `create_listener ${subId} intent="${intent}" pageUrl=${matched.pageUrl ?? "—"} endpoints=${matched.endpoints.length} keywords=[${plan.keywords.join(",")}]`,
+      `create_listener ${subId} intent="${intent}" pageUrl=${filled.pageUrl ?? "—"} endpoints=${filled.endpoints.length} keywords=[${plan.keywords.join(",")}]${filled.moduleId ? ` module=${filled.moduleId}` : ""}`,
     );
     this.emitter.emit("watch", toWatch(sub));
     this.emitter.emit("listeners", this.listListeners().active.map(summaryToWatch));
