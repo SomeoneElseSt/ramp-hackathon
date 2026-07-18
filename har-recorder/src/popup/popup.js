@@ -39,11 +39,16 @@ async function renderTabs() {
 async function render() {
   const s = await send({ type: "get-state" });
   const rec = !!s.recording;
+  const listening = s.listening || [];
   els.dot.className = "dot " + (rec ? "rec" : "idle");
   els.dot.title = rec ? "recording" : "idle";
+  const listenLine =
+    listening.length > 0
+      ? ` · listening: <b>${listening.map((w) => w.label || w.subId).join(", ")}</b>`
+      : "";
   els.status.innerHTML = rec
-    ? `<b>Recording</b> · ${s.attached?.length || 0} tab(s) attached · <b>${s.entryCount}</b> events`
-    : `Idle · <b>${s.entryCount}</b> events stored`;
+    ? `<b>Recording</b> · ${s.attached?.length || 0} tab(s) attached · <b>${s.entryCount}</b> events${listenLine}`
+    : `Idle · <b>${s.entryCount}</b> events stored${listenLine}`;
   els.start.disabled = rec;
   els.stop.disabled = !rec;
   els.scopeBox.disabled = rec;

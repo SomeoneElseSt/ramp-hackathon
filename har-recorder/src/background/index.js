@@ -18,6 +18,7 @@ import { buildSummary } from "../core/filter.js";
 import { buildHar } from "../core/har.js";
 import { containsForbiddenHeader } from "../core/redact.js";
 import { SCHEMA_VERSION } from "../core/schema.js";
+import { resolveWatchTarget } from "../integrations/index.js";
 
 // Robust, restart-safe unique id (raw ids need only be unique, not ordered;
 // export sorts by ts). Node tests use a deterministic factory instead.
@@ -31,6 +32,8 @@ function robustIdFactory() {
 const idFn = robustIdFactory();
 
 let recording = false;
+/** @type {Map<string, { subId: string, label: string|null, pageUrl: string|null }>} */
+const activeWatches = new Map();
 
 // ---- live stream to the reflex daemon (CONTRACT.md §0/§1) ------------------
 // The extension IS the laptop sensor. It streams each already-redacted,
@@ -39,9 +42,12 @@ let recording = false;
 // If the daemon isn't running, events queue locally (and IndexedDB still has
 // them for export). All localhost-only. Adds only an outbound WS client; the
 // event envelope is unchanged (CONTRACT §1).
+//
+// Daemon → extension: RecorderControl {watch|unwatch|listeners} opens/focuses
+// a tab via the integration harness so ambient capture has an auth surface.
 const DAEMON_URL = "ws://localhost:8787";
 
-function createDaemonClient(url) {
+function createDaemonClient(url, { onControl } = {}) {
   let socket = null;
   let reconnectTimer = null;
   const queue = [];
@@ -56,6 +62,14 @@ function createDaemonClient(url) {
     socket.addEventListener("open", () => {
       try { socket.send(JSON.stringify({ role: "recorder" })); } catch (_) {}
       flush();
+    });
+    socket.addEventListener("message", (ev) => {
+      try {
+        const msg = JSON.parse(String(ev.data));
+        if (msg && (msg.kind === "watch" || msg.kind === "unwatch" || msg.kind === "listeners")) {
+          onControl?.(msg);
+        }
+      } catch (_) {}
     });
     socket.addEventListener("close", scheduleReconnect);
     socket.addEventListener("error", () => { try { socket.close(); } catch (_) {} });
@@ -81,7 +95,130 @@ function createDaemonClient(url) {
   };
 }
 
-const daemon = createDaemonClient(DAEMON_URL);
+const daemon = createDaemonClient(DAEMON_URL, { onControl: handleRecorderControl });
+
+async function handleRecorderControl(msg) {
+  if (msg.kind === "watch") {
+    await onWatch(msg.payload);
+    return;
+  }
+  if (msg.kind === "unwatch") {
+    activeWatches.delete(msg.payload?.subId);
+    updateListeningBadge();
+    broadcast();
+    return;
+  }
+  if (msg.kind === "listeners") {
+    const active = msg.payload?.active || [];
+    activeWatches.clear();
+    for (const w of active) {
+      if (w?.subId) await onWatch(w);
+    }
+    updateListeningBadge();
+    broadcast();
+  }
+}
+
+/**
+ * Integration harness entry: ensure ambient capture + open/focus pageUrl.
+ * @param {object} watch ListenerWatch from daemon
+ */
+async function onWatch(watch) {
+  if (!watch?.subId) return;
+
+  const target = resolveWatchTarget(watch);
+  activeWatches.set(watch.subId, {
+    subId: watch.subId,
+    label: watch.label || target.moduleId || null,
+    pageUrl: target.pageUrl,
+  });
+
+  if (!target.openTab || !target.pageUrl || isRestrictedUrl(target.pageUrl)) {
+    updateListeningBadge();
+    broadcast();
+    return;
+  }
+
+  try {
+    const tab = await openOrFocusTab(target.pageUrl);
+    if (tab?.id != null) {
+      if (!recording) {
+        recording = true;
+        const scope = { mode: "tabs", tabIds: [tab.id] };
+        await setMeta("recording", true);
+        await setMeta("startedAt", Date.now());
+        await setMeta("scope", scope);
+        await tabs.start(scope);
+      } else {
+        await tabs.includeTab(tab.id);
+        const s = tabs.scope();
+        await setMeta("scope", {
+          mode: s.mode,
+          windowId: s.windowId ?? null,
+          tabIds: [...(s.tabIds || [])],
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("[tama] watch open-tab failed", err);
+  }
+
+  updateListeningBadge();
+  broadcast();
+}
+
+async function openOrFocusTab(pageUrl) {
+  let origin;
+  try {
+    origin = new URL(pageUrl).origin;
+  } catch {
+    return null;
+  }
+  const existing = await chrome.tabs.query({ url: `${origin}/*` });
+  // Prefer a tab already on a path prefix of pageUrl (e.g. /messaging/).
+  let pathPrefix = "/";
+  try {
+    pathPrefix = new URL(pageUrl).pathname.replace(/\/$/, "") || "/";
+  } catch (_) {}
+  const ranked = existing
+    .filter((t) => t.id != null && !isRestrictedUrl(t.url))
+    .sort((a, b) => {
+      const aHit = (a.url || "").includes(pathPrefix) ? 1 : 0;
+      const bHit = (b.url || "").includes(pathPrefix) ? 1 : 0;
+      return bHit - aHit;
+    });
+  if (ranked[0]) {
+    const tab = ranked[0];
+    await chrome.tabs.update(tab.id, { active: true });
+    if (tab.windowId != null) {
+      try { await chrome.windows.update(tab.windowId, { focused: true }); } catch (_) {}
+    }
+    // If we're on the right origin but wrong path (feed vs messaging), navigate.
+    if (pathPrefix !== "/" && !(tab.url || "").includes(pathPrefix)) {
+      await chrome.tabs.update(tab.id, { url: pageUrl });
+    }
+    return tab;
+  }
+  return chrome.tabs.create({ url: pageUrl, active: true });
+}
+
+function updateListeningBadge() {
+  const n = activeWatches.size;
+  const first = n > 0 ? [...activeWatches.values()][0] : null;
+  const label = first?.label || "listen";
+  try {
+    if (n === 0) {
+      chrome.action.setBadgeText({ text: "" });
+      chrome.action.setTitle({ title: "Tama / Workflow Recorder" });
+    } else {
+      chrome.action.setBadgeText({ text: n > 1 ? String(n) : "ON" });
+      chrome.action.setBadgeBackgroundColor({ color: "#1a7f4b" });
+      chrome.action.setTitle({
+        title: n === 1 ? `Tama listening: ${label}` : `Tama listening: ${n} listeners`,
+      });
+    }
+  } catch (_) {}
+}
 
 // ---- storage sink (redaction already applied in normalize) -----------------
 async function store(ev) {
@@ -206,6 +343,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           entryCount: await countEvents(),
           attached: [...injectedTabs],
           schemaVersion: SCHEMA_VERSION,
+          listening: [...activeWatches.values()],
         });
         break;
       case "start": {
