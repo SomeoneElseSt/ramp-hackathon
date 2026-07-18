@@ -63,6 +63,9 @@ class Perceiver {
 
     const extracted = await extractFrom(event);
     this.counts.extracted += extracted.length;
+    // Newest LinkedIn deliveredAt first so wait_for_event sees the fresh DM,
+    // not an older row from the same sync payload.
+    extracted.sort((a, b) => (b.event.ts || 0) - (a.event.ts || 0));
 
     const fresh: SemanticEvent[] = [];
     for (const { event: semantic, dedupId } of extracted) {
@@ -79,10 +82,18 @@ class Perceiver {
       this.deliver(semantic);
       this.emitter.emit("semantic", semantic);
     }
-    if (extracted.length > 0) {
+    const data = event.data as { content?: { text?: string }; url?: string } | undefined;
+    const body = data?.content?.text || "";
+    const url = data?.url || event.url || "";
+    if (
+      /voyagerMessagingGraphQL|messengerMessages|messenger\.Message/i.test(url + body.slice(0, 400))
+    ) {
       log(
-        `extract raw=${event.id} got=${extracted.length} emit=${fresh.length} dedup=${extracted.length - fresh.length}`,
+        `debug messaging id=${event.id} body=${body.length} extracted=${extracted.length} emitted=${fresh.length} url=${String(url).slice(0, 100)}`,
       );
+    }
+    if (extracted.length > 0 && fresh.length === 0) {
+      log(`debug messaging all-deduped id=${event.id} extracted=${extracted.length}`);
     }
     return fresh;
   }
