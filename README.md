@@ -158,7 +158,7 @@ Daemon → agent (MCP):     { type, source, ts, from, to, text, evidence }  // r
 ## Installation & setup
 
 **Prod = latest `master`** (no separate deploy). Extension version is in
-`har-recorder/manifest.json` (currently **0.4.2**).
+`har-recorder/manifest.json` (currently **0.4.3**).
 
 ### Prerequisites
 
@@ -187,7 +187,7 @@ npm run dev
 
 1. `chrome://extensions` → enable **Developer mode**.
 2. **Load unpacked** → select the `har-recorder/` folder (not the repo root).
-3. If already loaded: click **Reload**, then confirm version **0.4.2** on the card.
+3. If already loaded: click **Reload**, confirm version **0.4.3**, then hard-refresh open LinkedIn tabs.
 4. Open the Tama popup → **Sit** / ambient on (or let MCP `create_listener` open a tab).
 
 ### 4. Point an agent at it

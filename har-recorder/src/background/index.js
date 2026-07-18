@@ -312,9 +312,12 @@ function broadcast() {
 }
 
 // ---- sensors (debugger-free) -----------------------------------------------
-// Network capture is done by injecting the MAIN-world interceptor (patches
-// fetch/XHR/WebSocket/EventSource) instead of chrome.debugger — no "being
-// debugged" banner. Injection is scoped to opted-in tabs only.
+// Network capture: content_scripts register interceptor+relay at document_start
+// (manifest) so fetch/XHR are patched BEFORE page scripts bind them. No
+// chrome.debugger / HAR — no "being debugged" banner. Background still drops
+// page-capture when !recording. Programmatic inject below is a fallback for
+// tabs already open when the extension reloaded (content_scripts won't re-run
+// until navigation).
 const injectedTabs = new Set();
 const tabs = createTabTracker({
   onEvent: store,
@@ -330,10 +333,11 @@ async function injectSensors(tabId) {
   const already = injectedTabs.has(tabId);
   try {
     if (!already) {
-      // MAIN-world network interceptor + isolated-world relay
+      // Fallback if document_start scripts missed this document (pre-reload tab).
+      // Interceptor/relay are idempotent (__wfIntercept / __wfRelay).
       await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/interceptor.js"], world: "MAIN" });
       await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/relay.js"], world: "ISOLATED" });
-      // DOM interaction capture
+      // DOM interaction capture (not in manifest content_scripts)
       await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/content-script.js"] });
       injectedTabs.add(tabId);
     }

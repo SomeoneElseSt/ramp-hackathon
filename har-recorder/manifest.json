@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "Tama",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Tama sits on your authenticated tabs, streams ambient activity to the local daemon, and surfaces active listeners as you work. Nothing leaves your machine.",
   "permissions": [
     "tabs",
@@ -17,6 +17,20 @@
     "service_worker": "src/background/index.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/content/interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/content/relay.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ],
   "action": {
     "default_title": "Tama",
     "default_popup": "src/popup/popup.html"

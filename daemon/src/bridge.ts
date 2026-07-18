@@ -118,7 +118,6 @@ export function startBridge(): Promise<void> {
     perceiver.emitter.on("listeners", (active: ListenerWatch[]) => {
       broadcastRecorder({ kind: "listeners", payload: { active } });
     });
-
     // Represent the screenshot-polling baseline agent for the side-by-side demo.
     if (POLL_INTERVAL_MS > 0) {
       setInterval(

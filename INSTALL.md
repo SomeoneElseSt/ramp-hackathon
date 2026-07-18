@@ -1,8 +1,8 @@
 # Install + use — LinkedIn DM wake (Tama)
 
-Practical path: load **har-recorder v0.4.2**, run the daemon, point **Codex or Cursor** at Tama MCP, then block on `wait_for_event` until the next LinkedIn DM.
+Practical path: load **har-recorder v0.4.3**, run the daemon, point **Codex or Cursor** at Tama MCP, then block on `wait_for_event` until the next LinkedIn DM.
 
-Prod = latest `master` (tag `v0.4.2` matches `har-recorder/manifest.json`). Fuller architecture: [`README.md`](./README.md), [`CONTEXT.md`](./CONTEXT.md). Daemon details: [`daemon/README.md`](./daemon/README.md).
+Prod = latest `master` (`har-recorder` manifest **0.4.3**). Fuller architecture: [`README.md`](./README.md), [`CONTEXT.md`](./CONTEXT.md). Daemon details: [`daemon/README.md`](./daemon/README.md).
 
 ---
 
@@ -30,13 +30,13 @@ cd daemon
 npm install
 ```
 
-### Extension (unpacked **har-recorder** v0.4.2)
+### Extension (unpacked **har-recorder** v0.4.3)
 
 1. Open `chrome://extensions` (or `arc://extensions`).
 2. Enable **Developer mode**.
 3. **Load unpacked** → select the repo’s **`har-recorder/`** folder  
    (not the repo root, not any other recorder folder).
-4. Confirm the card shows **Tama** version **0.4.2**. If already loaded: **Reload**.
+4. Confirm the card shows **Tama** version **0.4.3**. If already loaded: **Reload**, then hard-refresh LinkedIn (document_start scripts).
 5. Open the Tama popup → status should move toward **Daemon live** once the MCP/daemon process is up. Click **Sit on this window** on a LinkedIn tab (or let `create_listener` open messaging).
 
 ### Start the daemon — **one owner of :8787**
@@ -47,7 +47,7 @@ npm install
 - If the port is stuck: `lsof -i :8787` → kill that PID → **Reload MCP** in Cursor.
 - Manual demo only when MCP is **disabled**: `cd daemon && npm run dev`
 
-Popup should read **Daemon live**. Watched tabs show a soft “Tama is listening” overlay (v0.4.2+).
+Popup should read **Daemon live**. Watched tabs show a soft “Tama is listening” overlay (v0.4.2+). Capture is debugger-free (`document_start` interceptor, not Chrome HAR).
 
 ---
 
@@ -169,7 +169,7 @@ After you paste: send a **new** LinkedIn DM (from another account or have someon
 | Symptom | Fix |
 |---|---|
 | Popup **Daemon offline** / nothing on 8787 | Start MCP (open a Codex/Cursor session that loads tama) or `cd daemon && npm run dev`. Check nothing else binds `8787` (`lsof -i :8787`). |
-| Extension not streaming | Reload unpacked extension; confirm version **0.4.2**; popup **Daemon live**; Sit on messaging or re-run `create_listener`. |
+| Extension not streaming | Reload unpacked extension; confirm version **0.4.3**; hard-refresh LinkedIn; popup **Daemon live**; Sit on messaging or re-run `create_listener`. |
 | Wrong unpacked path | Must be repo **`har-recorder/`**. Do not load an old `workflow-recorder` / other clone folder — wrong tree = no watch overlay / stale behavior. |
 | `wait_for_event` errors / ends ~60s | Raise Codex `tool_timeout_sec` (see config). Cursor: ensure long-running MCP tools are allowed. |
 | Wakes on old Hi/Sup / never on new DM | Re-`create_listener` *then* send a **new** message. Watermark ignores `ts` before arm. Stay on messaging with ambient on. |

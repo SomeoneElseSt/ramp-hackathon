@@ -65,7 +65,7 @@ browser (authenticated tab)
 
 ```bash
 cd daemon && npm install && npm run dev
-# Load unpacked: har-recorder/ (v0.4.2+)
+# Load unpacked: har-recorder/ (v0.4.3+)
 open demo/tamagent.html
 ```
 

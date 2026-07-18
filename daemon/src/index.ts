@@ -21,6 +21,14 @@ main().catch((err) => {
   process.exit(1);
 });
 
-process.stdin.on("end", () => {
-  log("MCP stdin closed — WS bridge + listeners stay up until process exit");
-});
+// Cursor reloads MCP by closing stdin. Exit so :8787 is released for the
+// next spawn — orphaned bridges cause EADDRINUSE on every reconnect.
+function shutdownOnStdinClose(reason: string): void {
+  log(`MCP stdin ${reason} — exiting so :8787 is free for reload`);
+  process.exit(0);
+}
+process.stdin.on("end", () => shutdownOnStdinClose("closed"));
+process.stdin.on("close", () => shutdownOnStdinClose("close"));
+if (process.stdin.isTTY === false) {
+  process.stdin.resume(); // keep readable so 'end' fires when Cursor disconnects
+}

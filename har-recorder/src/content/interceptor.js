@@ -1,8 +1,9 @@
 // interceptor.js — runs in the page's MAIN world (no chrome.debugger, no banner,
 // no debugger permission). Patches fetch / XHR / WebSocket / EventSource to
 // capture request+response bodies and realtime frames, and relays them to the
-// isolated-world relay via window.postMessage. Injected at document_start so it
-// wraps the primitives before page scripts use them.
+// isolated-world relay via window.postMessage. Registered as a content_script
+// at document_start (manifest) so it wraps primitives before page scripts use
+// them; programmatic inject is a fallback (idempotent via __wfIntercept).
 (() => {
   if (window.__wfIntercept) return;
   window.__wfIntercept = true;
