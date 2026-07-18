@@ -3,6 +3,9 @@ import './style.css';
 // TamaAgent — the pet, sized to live inside the extension popup box.
 // Chrome caps popups at 800x600; we target 320px wide and ~430px tall so it
 // never scrolls or clips. Sprites are 16x16 cat faces on a 20x16 logical LCD.
+//
+// State comes from the BACKGROUND service worker (get-state / count), never a
+// WS opened here: a popup's socket dies the moment the popup closes.
 
 // ---- sprites: 'X' = pixel on. Filled head, negative-space eyes ------------
 const CAT: Record<string, string[]> = {
@@ -45,7 +48,7 @@ const LABEL: Record<string, string> = {
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <header>
-    <h1>reflex</h1>
+    <h1>Tama Agent</h1>
     <span class="dot" id="dot"></span>
   </header>
 
@@ -55,10 +58,10 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   </div>
   <div class="tag" id="tag">sleeping</div>
 
-  <section>
-    <h2>Listeners</h2>
-    <div class="row" id="lrow"><span class="muted">no listener yet</span></div>
-  </section>
+  <div class="row">
+    <button id="toggle">Pause</button>
+    <span class="count"><b id="count">0</b> events</span>
+  </div>
 
   <section>
     <h2>Recent events</h2>
@@ -92,10 +95,10 @@ function paint(b: number[][]) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b[y][x]) ctx.fillRect(x * s, y * s, s - 1, s - 1);
 }
 
-// ---- state ---------------------------------------------------------------
+// ---- pet state -----------------------------------------------------------
 const pet = document.getElementById('pet')!;
 const tag = document.getElementById('tag')!;
-let state = 'sleeping', frame = 0, hits = 0;
+let state = 'sleeping', frame = 0;
 
 function draw() {
   const b = blank();
@@ -117,51 +120,68 @@ function setState(s: string, buzz = false) {
 }
 setInterval(() => { frame++; draw(); }, 700);
 
-function onEvent(ev: { from?: string; text?: string }) {
-  hits++;
-  const hitEl = document.getElementById('hits');
-  if (hitEl) hitEl.textContent = String(hits);
+function logEvent(label: string, detail: string) {
   const list = document.getElementById('events')!;
-  if (hits === 1) list.innerHTML = '';
+  if (list.querySelector('.muted')) list.innerHTML = '';
   const d = document.createElement('div');
   d.className = 'ev';
   const b = document.createElement('b');
-  b.textContent = ev.from || 'someone';
+  b.textContent = label;
   const s = document.createElement('span');
-  s.textContent = `${ev.text || 'new message'} · ${new Date().toLocaleTimeString()}`;
+  s.textContent = `${detail} · ${new Date().toLocaleTimeString()}`;
   d.append(b, s);
   list.prepend(d);
-  setState('happy', true);
-  setTimeout(() => setState('sleeping'), 5000);
+  while (list.children.length > 12) list.lastElementChild!.remove();
 }
 
-// ---- daemon (CONTRACT.md §0 viewer role) ---------------------------------
+// ---- background-driven state --------------------------------------------
+const countEl = document.getElementById('count')!;
 const statusEl = document.getElementById('status')!;
 const dot = document.getElementById('dot')!;
+const toggleEl = document.getElementById('toggle') as HTMLButtonElement;
 
-function connect() {
-  const ws = new WebSocket('ws://localhost:8787');
-  ws.addEventListener('open', () => {
-    statusEl.textContent = 'daemon: connected';
-    statusEl.className = 'status ok';
-    dot.className = 'dot ok';
-    ws.send(JSON.stringify({ role: 'viewer' }));
-    document.getElementById('lrow')!.innerHTML =
-      '<span>linkedin · new messages</span><b id="hits">0</b>';
-    setState('watching');
-  });
-  ws.addEventListener('message', (m) => {
-    let msg: any;
-    try { msg = JSON.parse(m.data as string); } catch { return; }
-    if (msg.kind === 'semantic') onEvent({ from: msg.payload?.from?.name, text: msg.payload?.text });
-    else if (msg.kind === 'raw' && msg.payload?.type === 'console.error') setState('distress', true);
-  });
-  ws.addEventListener('error', () => {
-    statusEl.textContent = 'daemon: offline (start it on :8787)';
-    statusEl.className = 'status off';
-    dot.className = 'dot off';
-  });
+const send = (msg: any): Promise<any> => chrome.runtime.sendMessage(msg);
+let lastCount = 0;
+
+async function refresh() {
+  const s = await send({ type: 'get-state' }).catch(() => null);
+  if (!s) return;
+
+  countEl.textContent = String(s.count ?? 0);
+  toggleEl.textContent = s.recording ? 'Pause' : 'Record';
+  statusEl.textContent = s.daemon ? 'daemon: connected' : 'daemon: offline (start it on :8787)';
+  statusEl.className = 'status ' + (s.daemon ? 'ok' : 'off');
+  dot.className = 'dot ' + (s.daemon ? 'ok' : 'off');
+
+  // The pet reflects reality: awake only when actually listening.
+  if (state !== 'happy') setState(s.daemon && s.recording ? 'watching' : 'sleeping');
+  lastCount = s.count ?? 0;
 }
 
+toggleEl.onclick = async () => {
+  const s = await send({ type: 'get-state' });
+  await send({ type: 'set-recording', on: !s.recording });
+  refresh();
+};
+
+chrome.runtime.onMessage.addListener((msg: any) => {
+  if (msg?.type === 'count') {
+    const c = msg.count ?? 0;
+    countEl.textContent = String(c);
+    if (c > lastCount) {
+      lastCount = c;
+      setState('happy', true);
+      setTimeout(() => setState('watching'), 4000);
+    }
+  }
+  // Resolved semantic event from the daemon, if the background forwards it.
+  if (msg?.type === 'semantic') {
+    logEvent(msg.payload?.from?.name || 'someone', msg.payload?.text || 'new message');
+    setState('happy', true);
+    setTimeout(() => setState('watching'), 4000);
+  }
+});
+
 setState('sleeping');
-connect();
+refresh();
+setInterval(refresh, 1500);
