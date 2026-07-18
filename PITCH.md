@@ -55,7 +55,7 @@
 
 ## Numbers to have on screen (fill these in before demos start)
 
-| Metric | Screenshot agent | Reflex | Note |
+| Metric | Screenshot agent | TamaAgent | Note |
 |---|---|---|---|
 | Tokens | | | live counter |
 | Cost | | | live counter |
@@ -72,13 +72,15 @@ Put the funnel number on screen somewhere. `3054 raw → 125 useful → the hand
 > "Correct, and we're not pretending otherwise. Reactivity here is a long-lived tool call that blocks and resolves the moment a real event arrives. The agent isn't looping, it isn't burning tokens, and it isn't on a timer. That's the primitive."
 
 **"Is this just hardcoded for LinkedIn?"**
-> "The extractor is per-site, the rest isn't. Capture, redaction, intent-narrowing, and the event contract are generic. Adding a site is one extractor file. We picked one site and did it properly rather than four badly."
+> "No, and we can show that. The extractor is site-agnostic: it walks any JSON response for message-shaped containers and resolves identities itself. Our test suite fires it on LinkedIn *and* a generic chat site with zero per-site code. The listener catalog grows organically from whatever traffic it sees. LinkedIn is just our proof site."
 
 **"What about auth and antibot?"**
 > "We ride your already-authenticated session in your own browser. There's no scraping, no headless login, nothing to detect. That's a side benefit of doing it as an extension."
 
 **"Is this a privacy nightmare?"**
-> "It's built the other way around. Cookies, auth headers, and CSRF tokens are dropped at the capture layer and never stored. Tokens, keys, and emails are recursively redacted. No typed input values, no full DOM snapshots. Everything is local, and the daemon only ever receives already-redacted events."
+> "Everything is local. It runs in your own browser, on your own session, and the daemon is on localhost. Nothing goes to a server. The redaction layer for cookies, auth headers and tokens is written and it's in the capture pipeline, but we have it **off in this build** so perception can read full bodies. That's a demo setting, not the design."
+
+*(Do NOT claim redaction is on. `CONTEXT.md` says "Redaction OFF (MVP)". Saying otherwise is a false claim, and "we turned it off to build, here's the switch" is a perfectly good answer.)*
 
 **"What's the business case?"**
 > "Any agent that has to wait on a state change today is either slow or expensive, and usually both. Payment cleared, invoice paid, ticket escalated, candidate replied. We make that class of agent cheap enough to leave running."

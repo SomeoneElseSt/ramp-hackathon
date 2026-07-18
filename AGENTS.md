@@ -1,4 +1,4 @@
-# AGENTS.md — working context for reflex / Tama
+# AGENTS.md — working context for TamaAgent
 
 Read this first. It's the working context for any agent or teammate picking up
 this repo. We build **one after the other on `master`** — sync, do a focused

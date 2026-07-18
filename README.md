@@ -1,10 +1,8 @@
-# reflex
+# TamaAgent
 
 **Give browser agents reflexes. Stop polling by screenshot.**
 
 A new modality for AI agents: instead of taking a screenshot every minute to check if something changed, an agent **subscribes** to a page and gets **pinged the instant it happens**, over the network and DOM layer the browser already emits. Reactive, not polling. Cheaper, faster, and the entities are resolved before the agent ever sees them.
-
-> Working name: `reflex`. Swap the title and repo slug freely.
 
 **Built at the Ramp Hackathon (2026)**
 
@@ -27,14 +25,14 @@ The interesting layer, the network requests and WebSocket frames the page is alr
 
 ## The Solution
 
-Reflex gives agents an **event layer** for any site that runs JavaScript:
+TamaAgent gives agents an **event layer** for any site that runs JavaScript:
 
 **Observe the real page traffic, resolve it into clean semantic events, and let an agent block on `wait_for_event()` until one fires.**
 
 1. **Capture**: a local Chrome extension records the page's real network traffic (via CDP, so actual response bodies), WebSocket frames, clicks, DOM changes, and tab switches, redacted at the source.
 2. **Perceive**: a perception layer turns raw traffic into resolved semantic events (`message.received` with the real sender name already joined in), inspecting only API-shaped, intent-matching endpoints.
 3. **React**: an MCP server exposes `subscribe(intent)` and a blocking `wait_for_event()`. The agent subscribes, then idles at near-zero cost until a matching event arrives, then acts in under a second. No screenshots. No polling.
-4. **Extend**: the same capture stream doubles as a **proactive** signal. Reflex records how you actually work across tabs and can surface the repeated workflows worth automating.
+4. **Extend**: the same capture stream doubles as a **proactive** signal. TamaAgent records how you actually work across tabs and can surface the repeated workflows worth automating.
 
 **One agent. One page. Zero screenshots. Reactive by design.**
 
@@ -83,7 +81,7 @@ The whole thesis is that last unblock: **reactivity is a long-lived tool call th
 
 ### Cost + speed comparison (the demo)
 
-- Side-by-side: a screenshot-polling agent vs a Reflex agent doing the same watch task.
+- Side-by-side: a screenshot-polling agent vs a Tama agent doing the same watch task.
 - Live counter of **tokens / dollars / latency** on each. The delta is the pitch: fewer tokens, near-zero idle cost, sub-second reaction.
 
 ### Proactive workflow extraction
@@ -93,7 +91,7 @@ The whole thesis is that last unblock: **reactivity is a long-lived tool call th
 
 ### Privacy by construction
 
-- Everything stays local (IndexedDB). The capture layer never exports secrets; the daemon only ever receives already-redacted events. Reflex observes and reacts; it does not act on your behalf without an explicit tool call.
+- Everything stays local (IndexedDB). The capture layer never exports secrets; the daemon only ever receives already-redacted events. TamaAgent observes and reacts; it does not act on your behalf without an explicit tool call.
 
 ---
 
@@ -101,7 +99,7 @@ The whole thesis is that last unblock: **reactivity is a long-lived tool call th
 
 ```
 ┌──────────────────────────┐      WS       ┌──────────────────────────┐
-│  Chrome extension (MV3)   │  redacted     │   Reflex daemon (Node)   │
+│  Chrome extension (MV3)   │  redacted     │   Tama daemon (Node)    │
 │  CDP network + WS + DOM    │  events       │   TypeScript             │
 │  capture + redaction       │ ────────────► │   ws://localhost:8787    │
 │  IndexedDB (local only)    │               │   perception + dedup     │
@@ -184,7 +182,7 @@ npm run dev
 
 ### 3. Point an agent at it
 
-Add the Reflex MCP server to your MCP client config, then:
+Add the Tama MCP server to your MCP client config, then:
 
 ```
 subscribe({ intent: "new messages", types: ["message.received"] })
@@ -206,7 +204,7 @@ node tools/get-events.js <trace.json> --intent "new messages" --live
 ## Project structure
 
 ```
-reflex/
+ramp-hackathon/
 ├── manifest.json               # MV3 extension manifest
 ├── src/
 │   ├── core/                   # pure, testable pipeline (no browser APIs)
@@ -282,7 +280,7 @@ Extension exports (offline analysis):
 
 **One laptop. Two windows. A live cost counter on each.**
 
-| | Left: screenshot agent | Right: Reflex |
+| | Left: screenshot agent | Right: TamaAgent |
 |---|---|---|
 | Task | "watch LinkedIn, ping on a new DM" | same task, via MCP |
 | Behavior | screenshots every 60s, vision model reads it | `wait_for_event()`, idles |
@@ -297,7 +295,7 @@ Spoken generalization (plants the fintech flag without building it): *the same p
 ## Privacy model
 
 - **Never exported**: cookies, `Authorization`, CSRF tokens, sensitive headers, dropped in the capture layer.
-- **Recursively redacted**: JWTs, bearer tokens, cloud/API keys, high-entropy blobs, emails, and sensitive-named values.
+- **Redaction layer (built, OFF in this build)**: recursively redacts: JWTs, bearer tokens, cloud/API keys, high-entropy blobs, emails, and sensitive-named values.
 - **No input values**: focus/submit record field type and label only, never typed text; password fields are labeled, never read.
 - **No full DOM snapshots**: only compact heuristic descriptions (dialog, alert, loading, success/error).
 - **Local first**: capture lives in IndexedDB; the daemon only receives already-redacted events over localhost.
@@ -306,7 +304,7 @@ Spoken generalization (plants the fintech flag without building it): *the same p
 
 ## Chrome / CDP limitations (honest)
 
-- **One debugger per tab**: if DevTools is open on a tab, Reflex can't attach there.
+- **One debugger per tab**: if DevTools is open on a tab, TamaAgent can't attach there.
 - **The "being debugged" banner** appears on every attached tab, unavoidable with `chrome.debugger`.
 - **Restricted pages** (`chrome://`, extension pages, the Web Store) can't be attached or scripted.
 - **Response bodies** are captured for textual MIME types under a size cap; binary bodies are not collected.
@@ -326,7 +324,7 @@ The acceptance test drives the real pipeline with a synthetic cross-tab workflow
 
 ## Team
 
-**Built at the Ramp Hackathon (2026).** Reflex team (add names / roles).
+**Built at the Ramp Hackathon (2026).** TamaAgent team (add names / roles).
 
 - Extension + capture layer
 - Daemon + perception bridge
@@ -349,4 +347,4 @@ No `LICENSE` file is present yet. Add one (MIT, Apache-2.0, or hackathon terms) 
 
 ---
 
-**Agents shouldn't have to stare at a screen to know something happened. Reflex lets the page tell them.**
+**Agents shouldn't have to stare at a screen to know something happened. TamaAgent lets the page tell them.**
