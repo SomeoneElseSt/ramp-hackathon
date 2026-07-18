@@ -1,0 +1,319 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>TamaAgent</title>
+<!--
+  TamaAgent — two virtual pets, one per agent.
+
+  Left device belongs to the polling (screenshot) agent. Right device is
+  TamaAgent, driven by reflex.
+
+  The argument:
+    energy = tokens. The polling pet drains all afternoon because it screenshots
+    every 60s. TamaAgent sleeps at zero cost and snaps awake the instant a real
+    event arrives. Same job. One pet is exhausted AND late.
+
+  Layer 1 (sleep + instant wake) and Layer 2 (energy hearts) are live.
+  Layer 3 (mood from network health, hunger, XP) hooks marked TODO.
+
+  Standalone: just open the file. If the daemon isn't up it falls back to
+  simulation and shows a loud SIM badge so nobody demos fake data by accident.
+-->
+<style>
+  :root{
+    --room:#12101a; --ink:#e9e4f5; --dim:#8a83a3;
+    --lcd:#9bbc0f; --lcd-dark:#0f2f0f; --lcd-grid:rgba(15,47,15,.07);
+    --good:#4ade80; --bad:#f87171; --warn:#fbbf24; --cool:#60a5fa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:radial-gradient(circle at 50% 0%,#1d1930,var(--room));
+    color:var(--ink); min-height:100vh; display:flex; flex-direction:column;
+    align-items:center; gap:2vh; padding:2.5vh 2vw;
+    font:16px/1.5 ui-monospace,"Courier New",monospace; letter-spacing:.04em;
+  }
+  header{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;width:100%;max-width:1100px}
+  h1{font-size:clamp(1.1rem,2.4vw,1.9rem);letter-spacing:.22em;text-transform:uppercase}
+  .sub{color:var(--dim);font-size:clamp(.7rem,1.1vw,.9rem)}
+  #badge{margin-left:auto;padding:.3rem .8rem;border-radius:999px;font-size:clamp(.65rem,1vw,.8rem);
+    font-weight:700;letter-spacing:.14em}
+  .live{background:rgba(74,222,128,.14);color:var(--good);border:1px solid var(--good)}
+  .sim{background:rgba(251,191,36,.14);color:var(--warn);border:1px solid var(--warn)}
+
+  .stage{display:grid;grid-template-columns:1fr 1fr;gap:clamp(1rem,3vw,3rem);
+    width:100%;max-width:1100px;flex:1;align-content:center}
+  @media(max-width:760px){.stage{grid-template-columns:1fr}}
+
+  .unit{display:flex;flex-direction:column;align-items:center;gap:.9rem}
+  .name{font-size:clamp(.7rem,1.2vw,.9rem);letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+  .name b{display:block;color:var(--ink);font-size:clamp(.85rem,1.5vw,1.1rem);letter-spacing:.14em}
+
+  /* the shell */
+  .tama{
+    width:100%;max-width:330px;aspect-ratio:1/1.16;position:relative;
+    border-radius:48% 48% 44% 44% / 40% 40% 60% 60%;
+    padding:11% 11% 0;
+    display:flex;flex-direction:column;align-items:center;
+    box-shadow:inset 0 -14px 28px rgba(0,0,0,.28), inset 0 12px 22px rgba(255,255,255,.42), 0 16px 34px rgba(0,0,0,.45);
+    transition:box-shadow .25s,transform .12s;
+  }
+  .tama.poll{background:linear-gradient(160deg,#9aa0ad,#6f7583 70%)}
+  .tama.reflex{background:linear-gradient(160deg,#ff9ec7,#e8629b 70%)}
+  .tama.awake{box-shadow:inset 0 -14px 28px rgba(0,0,0,.28), inset 0 12px 22px rgba(255,255,255,.42),
+    0 0 0 4px rgba(96,165,250,.55), 0 18px 46px rgba(96,165,250,.4)}
+  .tama.buzz{animation:buzz .4s ease-out}
+  @keyframes buzz{0%,100%{transform:translate(0,0)}20%{transform:translate(-4px,2px) rotate(-1.2deg)}
+    45%{transform:translate(4px,-2px) rotate(1.2deg)}70%{transform:translate(-2px,1px)}}
+
+  .bezel{width:100%;background:#26222e;border-radius:14px;padding:9px;
+    box-shadow:inset 0 3px 7px rgba(0,0,0,.65)}
+  canvas{width:100%;display:block;image-rendering:pixelated;border-radius:5px;background:var(--lcd)}
+
+  .btns{display:flex;gap:14%;margin-top:auto;padding-bottom:9%;width:62%;justify-content:center}
+  .btn{flex:1;aspect-ratio:1;border-radius:50%;background:linear-gradient(180deg,#f6f4f9,#c9c4d4);
+    box-shadow:inset 0 -3px 5px rgba(0,0,0,.3),0 2px 4px rgba(0,0,0,.35)}
+
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;width:100%;max-width:330px}
+  .stat{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+    border-radius:8px;padding:.45rem .3rem;text-align:center}
+  .stat b{display:block;font-size:clamp(.9rem,1.9vw,1.35rem);font-variant-numeric:tabular-nums}
+  .stat span{font-size:clamp(.52rem,.85vw,.65rem);color:var(--dim);letter-spacing:.12em}
+  .late b{color:var(--bad)} .fast b{color:var(--good)}
+  .status{min-height:1.5em;font-size:clamp(.68rem,1.15vw,.85rem);color:var(--dim);text-align:center;letter-spacing:.1em}
+  .status.hot{color:var(--cool);font-weight:700}
+
+  footer{color:var(--dim);font-size:clamp(.65rem,1vw,.8rem)}
+  kbd{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:.1rem .35rem}
+</style>
+
+<header>
+  <h1>TamaAgent</h1>
+  <span class="sub">same job &nbsp;·&nbsp; one of them slept</span>
+  <span id="badge" class="sim">connecting…</span>
+</header>
+
+<div class="stage">
+  <div class="unit">
+    <div class="name">screenshot agent<b>POLLER</b></div>
+    <div class="tama poll" id="dev-poll">
+      <div class="bezel"><canvas id="lcd-poll" width="320" height="240"></canvas></div>
+      <div class="btns"><i class="btn"></i><i class="btn"></i><i class="btn"></i></div>
+    </div>
+    <div class="status" id="st-poll">…</div>
+    <div class="stats">
+      <div class="stat"><b id="tok-poll">0</b><span>TOKENS</span></div>
+      <div class="stat"><b id="cost-poll">$0.00</b><span>EST COST</span></div>
+      <div class="stat late"><b id="lat-poll">—</b><span>LATENCY</span></div>
+    </div>
+  </div>
+
+  <div class="unit">
+    <div class="name">reflex<b>TAMAAGENT</b></div>
+    <div class="tama reflex" id="dev-reflex">
+      <div class="bezel"><canvas id="lcd-reflex" width="320" height="240"></canvas></div>
+      <div class="btns"><i class="btn"></i><i class="btn"></i><i class="btn"></i></div>
+    </div>
+    <div class="status" id="st-reflex">…</div>
+    <div class="stats">
+      <div class="stat"><b id="tok-reflex">0</b><span>TOKENS</span></div>
+      <div class="stat"><b id="cost-reflex">$0.00</b><span>EST COST</span></div>
+      <div class="stat fast"><b id="lat-reflex">—</b><span>LATENCY</span></div>
+    </div>
+  </div>
+</div>
+
+<footer><kbd>S</kbd> sim &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>E</kbd> fire test event</footer>
+
+<script>
+// ---------------------------------------------------------------------------
+// CONFIG — set to REAL measured values before demoing. Cost is labelled "est"
+// on purpose: do not present an estimate as a measurement.
+// ---------------------------------------------------------------------------
+const CFG = {
+  WS:"ws://localhost:8787",
+  TOKENS_PER_POLL:1100,   // one screenshot through a vision model
+  TOKENS_PER_EVENT:340,   // one resolved semantic event
+  COST_PER_1K:0.003,      // $/1k tokens
+  ENERGY_PER_POLL:1.6,    // % drained per screenshot
+  SIM_POLL_MS:3000,       // sped-up cadence in sim so the demo reads
+  SIM_EVENT_MS:11000,
+};
+
+// --- 1-bit pixel sprites (16x16), 'X' = pixel on --------------------------
+const CAT = {
+  idle:[
+    "................","..XX........XX..","..XXX......XXX..","..XXXXXXXXXXXX..",
+    "..X..........X..",".XX..XX..XX..XX.",".X............X.",".X....XXXX....X.",
+    ".X...X....X...X.","..XXXXXXXXXXXX..","...X........X...","...X........X...",
+    "...X........X...","...XXXXXXXXXX...","...X.X....X.X...","................"],
+  idle2:[
+    "................","................","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..","..X..........X..",".XX..XX..XX..XX.",".X............X.",
+    ".X....XXXX....X.",".X...X....X...X.","..XXXXXXXXXXXX..","...X........X...",
+    "...X........X...","...XXXXXXXXXX...","...X.X....X.X...","................"],
+  asleep:[
+    "................","................","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..","..X..........X..",".XX.XXX..XXX.XX.",".X............X.",
+    ".X.....XX.....X.","..XXXXXXXXXXXX..","...X........X...","...X........X...",
+    "...XXXXXXXXXX...","...X.X....X.X...","................","................"],
+  alert:[
+    "..X..........X..","..XX........XX..","..XXX......XXX..","..XXXXXXXXXXXX..",
+    "..X..........X..",".XX.XXX..XXX.XX.",".X..X.X..X.X..X.",".X..XXX..XXX..X.",
+    ".X.....XX.....X.","..XXXXXXXXXXXX..","...X........X...","...X........X...",
+    "...X........X...","...XXXXXXXXXX...","..X.X......X.X..","................"],
+  alarmed:[
+    "................","..XX........XX..","..XXX......XXX..","..XXXXXXXXXXXX..",
+    "..X..........X..",".XX.X.X..X.X.XX.",".X...X....X...X.",".X..X.X..X.X..X.",
+    ".X....XXXX....X.","..XXXXXXXXXXXX..","...X........X...","...X........X...",
+    "...X........X...","...XXXXXXXXXX...","...X.X....X.X...","................"],
+  drained:[
+    "................","................","..X..........X..","..XX........XX..",
+    "..XXXXXXXXXXXX..","..X..........X..",".XX.XXX..XXX.XX.",".X..XXX..XXX..X.",
+    ".X............X.",".X....XXXX....X.","..XXXXXXXXXXXX..","...X........X...",
+    "...X........X...","...XXXXXXXXXX...","...X.X....X.X...","................"],
+};
+const HEART_FULL=[".X.X.","XXXXX","XXXXX",".XXX.","..X.."];
+const HEART_EMPTY=[".X.X.","X...X","X...X",".X.X.","..X.."];
+const Z=["XXX","..X",".X.","X..","XXX"];
+const BANG=["X","X","X",".","X"];
+
+// --- LCD renderer ---------------------------------------------------------
+const W=32,H=24;                                  // logical LCD pixels
+function blank(){return Array.from({length:H},()=>Array(W).fill(0));}
+function blit(buf,sprite,ox,oy){
+  for(let y=0;y<sprite.length;y++)for(let x=0;x<sprite[y].length;x++){
+    if(sprite[y][x]!=="X")continue;
+    const px=ox+x,py=oy+y;
+    if(px>=0&&px<W&&py>=0&&py<H)buf[py][px]=1;
+  }
+}
+function paint(canvas,buf){
+  const ctx=canvas.getContext("2d");
+  const s=canvas.width/W;
+  ctx.fillStyle=getCSS("--lcd");ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle=getCSS("--lcd-grid");                    // faint LCD cell grid
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)ctx.fillRect(x*s+s-1,y*s,1,s);
+  ctx.fillStyle=getCSS("--lcd-dark");
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(buf[y][x])ctx.fillRect(x*s,y*s,s-1,s-1);
+}
+const cssCache={};
+function getCSS(v){return cssCache[v]??=getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+
+// --- pets -----------------------------------------------------------------
+const $=(id)=>document.getElementById(id);
+const money=(t)=>"$"+((t/1000)*CFG.COST_PER_1K).toFixed(3);
+
+function makePet(key){
+  return {energy:100,tokens:0,latency:null,state:"asleep",frame:0,
+    lcd:$("lcd-"+key),dev:$("dev-"+key),st:$("st-"+key),
+    tok:$("tok-"+key),cost:$("cost-"+key),lat:$("lat-"+key)};
+}
+const pets={poll:makePet("poll"),reflex:makePet("reflex")};
+const LABEL={asleep:"asleep · 0 tokens",idle:"watching",alert:"AWAKE — event received",
+  alarmed:"network error",drained:"exhausted from polling"};
+
+function draw(p){
+  const buf=blank();
+  // energy hearts, top row
+  const hearts=Math.round(p.energy/20);
+  for(let i=0;i<5;i++)blit(buf,i<hearts?HEART_FULL:HEART_EMPTY,2+i*6,1);
+  // the pet
+  let sprite=CAT[p.state]||CAT.idle;
+  if(p.state==="idle")sprite=p.frame%2?CAT.idle2:CAT.idle;
+  blit(buf,sprite,8,7);
+  // mood glyphs
+  if(p.state==="asleep"){
+    blit(buf,Z,26,7-(p.frame%2));
+    blit(buf,Z,24,11+(p.frame%2));
+  }
+  if(p.state==="alert"){blit(buf,BANG,4,8);blit(buf,BANG,27,8);}
+  paint(p.lcd,buf);
+}
+function render(p){
+  p.tok.textContent=p.tokens.toLocaleString();
+  p.cost.textContent=money(p.tokens);
+  p.lat.textContent=p.latency==null?"—":p.latency.toFixed(1)+"s";
+  p.st.textContent=LABEL[p.state]||"";
+  draw(p);
+}
+function setState(p,state,{hot=false,buzz=false}={}){
+  p.state=state;
+  p.st.classList.toggle("hot",hot);
+  p.dev.classList.toggle("awake",hot);
+  if(buzz){p.dev.classList.remove("buzz");void p.dev.offsetWidth;p.dev.classList.add("buzz");}
+  render(p);
+}
+setInterval(()=>{for(const k in pets){pets[k].frame++;draw(pets[k]);}},650);  // idle animation
+
+// --- the two behaviors that make the argument -----------------------------
+let pendingEventTs=null;   // a DM landed; POLLER hasn't noticed yet
+
+function onPoll(){                       // screenshot agent takes a frame
+  const p=pets.poll;
+  p.tokens+=CFG.TOKENS_PER_POLL;
+  p.energy=Math.max(0,p.energy-CFG.ENERGY_PER_POLL);
+  if(pendingEventTs!=null){
+    p.latency=(Date.now()-pendingEventTs)/1000;      // how late it was
+    pendingEventTs=null;
+    setState(p,"alert",{hot:true,buzz:true});
+    setTimeout(()=>setState(p,p.energy<70?"drained":"idle"),2600);
+  }else if(p.state!=="alert"){
+    setState(p,p.energy<70?"drained":"idle");
+  }
+  render(p);
+}
+
+function onSemanticEvent(ev){            // a real event arrived
+  const p=pets.reflex;
+  p.tokens+=CFG.TOKENS_PER_EVENT;
+  p.latency=0.8;                         // replace with real value once wired
+  pendingEventTs=Date.now();
+  setState(p,"alert",{hot:true,buzz:true});
+  if(ev?.from?.name)p.st.textContent="AWAKE — "+ev.from.name;
+  setTimeout(()=>setState(p,"asleep"),6000);
+}
+
+// TODO Layer 3: hunger, XP, mood from network health.
+function onNetworkHealth(bad){if(bad)setState(pets.reflex,"alarmed",{buzz:true});}
+
+// --- transport ------------------------------------------------------------
+let sim=[];
+function badge(mode){
+  const b=$("badge");
+  b.className=mode==="live"?"live":"sim";
+  b.textContent=mode==="live"?"LIVE":"SIM — not real data";
+}
+function startSim(){
+  badge("sim");stopSim();
+  sim.push(setInterval(onPoll,CFG.SIM_POLL_MS));
+  sim.push(setTimeout(()=>onSemanticEvent({from:{name:"Raphael Husbands"}}),CFG.SIM_EVENT_MS));
+}
+function stopSim(){sim.forEach(clearInterval);sim.forEach(clearTimeout);sim=[];}
+
+function connect(){
+  let ws;try{ws=new WebSocket(CFG.WS);}catch{return startSim();}
+  const fb=setTimeout(()=>{if(ws.readyState!==1){try{ws.close();}catch{}startSim();}},1500);
+  ws.onopen=()=>{clearTimeout(fb);stopSim();badge("live");ws.send(JSON.stringify({role:"viewer"}));};
+  ws.onclose=()=>startSim();
+  ws.onerror=()=>{};
+  ws.onmessage=(m)=>{
+    let msg;try{msg=JSON.parse(m.data);}catch{return;}
+    // contract: { kind:"semantic"|"poll"|"raw", payload }
+    if(msg.kind==="semantic")onSemanticEvent(msg.payload);
+    else if(msg.kind==="poll")onPoll();
+    else if(msg.kind==="raw"&&msg.payload?.type==="console.error")onNetworkHealth(true);
+  };
+}
+
+function reset(){
+  pendingEventTs=null;
+  for(const k in pets){Object.assign(pets[k],{energy:100,tokens:0,latency:null});setState(pets[k],"asleep");}
+}
+addEventListener("keydown",(e)=>{
+  const k=e.key.toLowerCase();
+  if(k==="s")startSim();
+  if(k==="r")reset();
+  if(k==="e")onSemanticEvent({from:{name:"Raphael Husbands"}});
+});
+
+reset();connect();
+</script>
