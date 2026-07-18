@@ -7,6 +7,7 @@ import type {
   ViewerEnvelope,
 } from "./types.js";
 import { perceiver } from "./perceive.js";
+import { shouldIngest } from "./ingest.js";
 import { log } from "./logger.js";
 
 // CONTRACT §0/§1: ws://localhost:8787 with recorder/viewer roles.
@@ -91,7 +92,9 @@ export function startBridge(): void {
 
 async function handleActivityEvent(event: ActivityEvent): Promise<void> {
   if (!event || typeof event.id !== "string") return;
-  // Forward raw to viewers first (network-health / debug), then perceive.
+  // Always-on ingest gate: only forward non-slop to perception.
+  // Viewers still see raw only when kept (avoids drowning the demo in CDN noise).
+  if (!shouldIngest(event)) return;
   broadcastViewer({ kind: "raw", payload: event });
   await perceiver.ingest(event);
 }

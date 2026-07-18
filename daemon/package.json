@@ -14,7 +14,8 @@
     "test:recorder": "tsx test/fake-recorder.ts",
     "test:mcp": "tsx test/mcp-client.ts",
     "test:tama": "tsx test/tama-hub.ts",
-    "test:control": "tsx test/recorder-control.ts"
+    "test:control": "tsx test/recorder-control.ts",
+    "test:ingest": "tsx test/ingest-linkedin.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
