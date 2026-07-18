@@ -125,6 +125,9 @@ class Perceiver {
     this.subscriptions.set(subId, sub);
     // Event-forward only: never carry pre-arm buffer into waiters.
     sub.pending.length = 0;
+    // Seed dedup with messages already sitting in the raw buffer so the next
+    // LinkedIn GraphQL sync doesn't wake on historical elements.
+    await this.primeDedupFromBuffer();
     log(
       `create_listener ${subId} sinceTs=${now} intent="${intent}" pageUrl=${filled.pageUrl ?? "—"} endpoints=${filled.endpoints.length} keywords=[${plan.keywords.join(",")}]${filled.moduleId ? ` module=${filled.moduleId}` : ""}`,
     );
@@ -227,6 +230,22 @@ class Perceiver {
   }
 
   // ---- internals ----------------------------------------------------------
+
+  /** Mark already-buffered messages as seen without delivering (arm-time). */
+  private async primeDedupFromBuffer(): Promise<void> {
+    const slice = this.raw.slice(-120);
+    for (const ev of slice) {
+      if (!this.isPerceivable(ev)) continue;
+      try {
+        const extracted = await extractFrom(ev);
+        for (const { event: semantic, dedupId } of extracted) {
+          this.emittedKeys.add(this.dedupKey(semantic, dedupId));
+        }
+      } catch {
+        // ignore prime failures
+      }
+    }
+  }
 
   private deliver(event: SemanticEvent): void {
     for (const sub of this.subscriptions.values()) {

@@ -268,19 +268,34 @@ function buildSemantic(
   });
   const conversationId = firstString(obj, CONV_KEYS);
   const sent = SENT_FLAGS.some((f) => obj[f] === true);
+  // Prefer LinkedIn deliveredAt (etc.) over HAR capture time — sync payloads
+  // re-include old messages; capture ts is always "now" and defeats sinceTs.
+  const ts = messageTime(obj) ?? ev.ts;
 
   return {
     dedupId,
     event: {
       type: sent ? "message.sent" : "message.received",
       source: host,
-      ts: ev.ts,
+      ts,
       from,
       conversationId: conversationId ?? null,
       text: text.slice(0, 2000),
       evidence: [ev.id],
     },
   };
+}
+
+/** Message-origin time when present (LinkedIn GraphQL uses deliveredAt ms). */
+function messageTime(obj: Record<string, unknown>): number | null {
+  for (const key of ["deliveredAt", "createdAt", "sentAt", "timestamp"]) {
+    const v = obj[key];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      if (v >= 1e12) return v; // epoch ms
+      if (v >= 1e9) return Math.round(v * 1000); // epoch sec
+    }
+  }
+  return null;
 }
 
 function extractText(obj: Record<string, unknown>): string | null {
@@ -565,13 +580,15 @@ function salvageMessengerMessages(
     const name = [first, last].filter(Boolean).join(" ") || null;
     const profileM = chunk.match(/"hostIdentityUrn"\s*:\s*"(urn:li:fsd_profile:[^"]+)"/);
     const convM = chunk.match(/"backendConversationUrn"\s*:\s*"(urn:li:messagingThread:[^"]+)"/);
+    const deliveredM = chunk.match(/"deliveredAt"\s*:\s*(\d{10,16})/);
+    const deliveredAt = deliveredM ? Number(deliveredM[1]) : null;
 
     out.push({
       dedupId,
       event: {
         type: "message.received",
         source: host || "www.linkedin.com",
-        ts: ev.ts,
+        ts: deliveredAt && deliveredAt > 1e12 ? deliveredAt : ev.ts,
         from: resolveIdentity({ name, profileId: profileM ? profileM[1] : null }),
         conversationId: convM ? convM[1] : null,
         text: text.slice(0, 2000),
