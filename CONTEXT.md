@@ -83,12 +83,16 @@ resolves a module and opens/focuses the tab.
 | Generic fallback | `listener.pageUrl` or first endpoint origin |
 
 On `watch` / late `listeners` sync: ensure recording → open or focus `pageUrl` →
-badge “listening: {label}”. Same ambient path as user-driven Start.
+badge “listening: {label}”. Same ambient path as user-driven Sit on tabs.
+
+**Product goal:** Tama sits on your open tabs headfully while you work — ambient
+capture + listener catalog grow together; popup shows daemon link + active
+listeners, not a HAR event counter.
 
 Two ways in (same capture path):
 
 1. **MCP-driven:** `create_listener` → `{kind:"watch"}` → open/focus + ambient.
-2. **User-driven:** popup Start → same ambient listen.
+2. **User-driven:** popup “Sit on this window” → same ambient listen.
 
 Until ambient is on → no candidates → nothing useful to rank.
 
@@ -165,9 +169,10 @@ candidate identity (request-URL stamp fix landed).
 - [x] Daemon LinkedIn defaults so `create_listener` always ships `pageUrl`
 
 ### Next
-- [ ] Popup: richer Tama UI (candidates, listeners list)
+- [x] Popup: Tama ambient UI (daemon + listeners; capture demoted)
 - [ ] Live E2E: `create_listener` → LinkedIn tab → ambient → `wait_for_event` on DM
 - [ ] Second module only when needed (same harness interface)
+- [ ] Popup: candidate shortlist / propose-workflow surface
 
 ### Do not build
 

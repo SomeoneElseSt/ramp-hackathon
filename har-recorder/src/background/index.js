@@ -47,7 +47,7 @@ const activeWatches = new Map();
 // a tab via the integration harness so ambient capture has an auth surface.
 const DAEMON_URL = "ws://localhost:8787";
 
-function createDaemonClient(url, { onControl } = {}) {
+function createDaemonClient(url, { onControl, onStatus } = {}) {
   let socket = null;
   let reconnectTimer = null;
   const queue = [];
@@ -57,11 +57,13 @@ function createDaemonClient(url, { onControl } = {}) {
     try {
       socket = new WebSocket(url);
     } catch (_) {
+      onStatus?.(false);
       return scheduleReconnect();
     }
     socket.addEventListener("open", () => {
       try { socket.send(JSON.stringify({ role: "recorder" })); } catch (_) {}
       flush();
+      onStatus?.(true);
     });
     socket.addEventListener("message", (ev) => {
       try {
@@ -71,7 +73,10 @@ function createDaemonClient(url, { onControl } = {}) {
         }
       } catch (_) {}
     });
-    socket.addEventListener("close", scheduleReconnect);
+    socket.addEventListener("close", () => {
+      onStatus?.(false);
+      scheduleReconnect();
+    });
     socket.addEventListener("error", () => { try { socket.close(); } catch (_) {} });
   }
   function scheduleReconnect() {
@@ -85,6 +90,9 @@ function createDaemonClient(url, { onControl } = {}) {
   connect();
 
   return {
+    connected() {
+      return !!(socket && socket.readyState === WebSocket.OPEN);
+    },
     push(ev) {
       if (socket && socket.readyState === WebSocket.OPEN) {
         try { socket.send(JSON.stringify(ev)); return; } catch (_) {}
@@ -95,7 +103,10 @@ function createDaemonClient(url, { onControl } = {}) {
   };
 }
 
-const daemon = createDaemonClient(DAEMON_URL, { onControl: handleRecorderControl });
+const daemon = createDaemonClient(DAEMON_URL, {
+  onControl: handleRecorderControl,
+  onStatus: () => broadcast(),
+});
 
 async function handleRecorderControl(msg) {
   if (msg.kind === "watch") {
@@ -209,7 +220,7 @@ function updateListeningBadge() {
   try {
     if (n === 0) {
       chrome.action.setBadgeText({ text: "" });
-      chrome.action.setTitle({ title: "Tama / Workflow Recorder" });
+      chrome.action.setTitle({ title: "Tama" });
     } else {
       chrome.action.setBadgeText({ text: n > 1 ? String(n) : "ON" });
       chrome.action.setBadgeBackgroundColor({ color: "#1a7f4b" });
@@ -344,6 +355,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           attached: [...injectedTabs],
           schemaVersion: SCHEMA_VERSION,
           listening: [...activeWatches.values()],
+          daemonConnected: daemon.connected(),
         });
         break;
       case "start": {

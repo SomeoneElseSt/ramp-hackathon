@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Workflow Recorder (research prototype)",
-  "version": "0.1.0",
-  "description": "Locally records cross-tab workflows — network (via in-page fetch/XHR/WebSocket/SSE interception, no debugger banner), clicks, forms, navigation, tab switches — and exports HAR + activity trace + compact summary. Nothing leaves your machine.",
+  "name": "Tama",
+  "version": "0.3.0",
+  "description": "Tama sits on your authenticated tabs, streams ambient activity to the local daemon, and surfaces active listeners as you work. Nothing leaves your machine.",
   "permissions": [
     "tabs",
     "storage",
@@ -16,7 +16,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Workflow Recorder",
+    "default_title": "Tama",
     "default_popup": "src/popup/popup.html"
   }
 }

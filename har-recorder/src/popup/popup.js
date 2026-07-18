@@ -9,10 +9,23 @@ const els = {
   clear: document.getElementById("clear"),
   tabList: document.getElementById("tabList"),
   scopeBox: document.getElementById("scopeBox"),
+  listenerList: document.getElementById("listenerList"),
+  listenerEmpty: document.getElementById("listenerEmpty"),
 };
 
 function selectedScopeMode() {
   return document.querySelector('input[name="scope"]:checked')?.value || "window";
+}
+
+function shortUrl(url) {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    const path = u.pathname.length > 40 ? u.pathname.slice(0, 37) + "…" : u.pathname;
+    return u.host + path;
+  } catch {
+    return String(url).slice(0, 48);
+  }
 }
 
 async function renderTabs() {
@@ -36,19 +49,65 @@ async function renderTabs() {
   }
 }
 
+function renderListeners(listening) {
+  const items = Array.isArray(listening) ? listening : [];
+  els.listenerList.innerHTML = "";
+  const has = items.length > 0;
+  els.listenerList.classList.toggle("hidden", !has);
+  els.listenerEmpty.classList.toggle("hidden", has);
+  for (const w of items) {
+    const li = document.createElement("li");
+    const label = document.createElement("span");
+    label.className = "label";
+    label.textContent = w.label || w.subId || "listener";
+    const page = document.createElement("span");
+    page.className = "page";
+    page.textContent = shortUrl(w.pageUrl) || "page pending";
+    page.title = w.pageUrl || "";
+    li.append(label, page);
+    els.listenerList.appendChild(li);
+  }
+}
+
 async function render() {
   const s = await send({ type: "get-state" });
   const rec = !!s.recording;
+  const connected = !!s.daemonConnected;
   const listening = s.listening || [];
-  els.dot.className = "dot " + (rec ? "rec" : "idle");
-  els.dot.title = rec ? "recording" : "idle";
-  const listenLine =
-    listening.length > 0
-      ? ` · listening: <b>${listening.map((w) => w.label || w.subId).join(", ")}</b>`
-      : "";
-  els.status.innerHTML = rec
-    ? `<b>Recording</b> · ${s.attached?.length || 0} tab(s) attached · <b>${s.entryCount}</b> events${listenLine}`
-    : `Idle · <b>${s.entryCount}</b> events stored${listenLine}`;
+  const nTabs = s.attached?.length || 0;
+
+  if (rec) {
+    els.dot.className = "dot rec";
+    els.dot.title = "ambient on";
+  } else if (!connected) {
+    els.dot.className = "dot off";
+    els.dot.title = "daemon offline";
+  } else {
+    els.dot.className = "dot idle";
+    els.dot.title = "ambient off";
+  }
+
+  const daemonLine = connected
+    ? `<b>Daemon connected</b> · localhost:8787`
+    : `<b>Daemon offline</b> · start with <code>cd daemon && npm run dev</code>`;
+
+  let ambientLine;
+  if (rec) {
+    const listenBit =
+      listening.length > 0
+        ? ` · <b>${listening.length}</b> listener${listening.length === 1 ? "" : "s"}`
+        : " · discovering as you browse";
+    ambientLine = `<b>Ambient on</b> · ${nTabs} tab${nTabs === 1 ? "" : "s"}${listenBit}`;
+  } else {
+    ambientLine = `Ambient off · sit on a window to capture while you work`;
+  }
+
+  els.status.innerHTML =
+    `<span class="line">${daemonLine}</span>` +
+    `<span class="line">${ambientLine}</span>`;
+
+  renderListeners(listening);
+
   els.start.disabled = rec;
   els.stop.disabled = !rec;
   els.scopeBox.disabled = rec;
@@ -62,18 +121,27 @@ els.start.onclick = async () => {
     scope = { mode: "window", windowId: currentWindow };
   } else {
     const tabIds = [...els.tabList.querySelectorAll("input:checked")].map((c) => Number(c.value));
-    if (!tabIds.length) { alert("Select at least one tab."); return; }
+    if (!tabIds.length) {
+      alert("Select at least one tab.");
+      return;
+    }
     scope = { mode: "tabs", tabIds };
   }
   const res = await send({ type: "start", scope });
-  if (!res?.ok) alert("Could not start: " + (res?.error || "unknown"));
+  if (!res?.ok) alert("Could not start ambient: " + (res?.error || "unknown"));
   render();
 };
 
-els.stop.onclick = async () => { await send({ type: "stop" }); render(); };
+els.stop.onclick = async () => {
+  await send({ type: "stop" });
+  render();
+};
 
 els.clear.onclick = async () => {
-  if (confirm("Delete all recorded events?")) { await send({ type: "clear" }); render(); }
+  if (confirm("Clear the local capture buffer?")) {
+    await send({ type: "clear" });
+    render();
+  }
 };
 
 els.exportBtn.onclick = async () => {
@@ -90,7 +158,7 @@ els.exportBtn.onclick = async () => {
     alert("Export error: " + (e.message || e));
   } finally {
     els.exportBtn.disabled = false;
-    els.exportBtn.textContent = "Export ▾";
+    els.exportBtn.textContent = "Export";
   }
 };
 
