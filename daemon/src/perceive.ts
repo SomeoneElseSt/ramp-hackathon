@@ -1,12 +1,16 @@
 import { EventEmitter } from "node:events";
 import type { ActivityEvent, SemanticEvent, Subscription } from "./types.js";
 import { extractFrom } from "./extract.js";
-import { planForIntent } from "./intent.js";
+import { planForIntent, refinePlanWithLLM } from "./intent.js";
+import { collectEndpointCandidates } from "./endpoints.js";
 import { log } from "./logger.js";
 
 // The perception layer. Runs incrementally over the growing raw buffer
 // (CONTRACT §5), dedups semantic events by a stable key, and drives both the
 // viewer broadcast (via the emitter) and the MCP blocking primitive (waiters).
+//
+// Models are used only at listener *setup* (refinePlanWithLLM) and ambiguous
+// extraction — never on the idle watch path.
 
 const RAW_BUFFER_CAP = 5000;
 const SEMANTIC_BUFFER_CAP = 500;
@@ -51,8 +55,14 @@ class Perceiver {
     return fresh;
   }
 
-  subscribe(intent: string, types?: string[]): string {
-    const plan = planForIntent(intent);
+  subscribe(intent: string, types?: string[]): Promise<string> {
+    return this.subscribeAsync(intent, types);
+  }
+
+  async subscribeAsync(intent: string, types?: string[]): Promise<string> {
+    const base = planForIntent(intent);
+    const candidates = collectEndpointCandidates(this.raw);
+    const plan = await refinePlanWithLLM(intent, base, candidates);
     const subId = "sub_" + Math.abs(hashCode(intent + this.subscriptions.size)).toString(36);
     const sub: Subscription = {
       subId,
@@ -63,7 +73,9 @@ class Perceiver {
       waiters: [],
     };
     this.subscriptions.set(subId, sub);
-    log(`subscribe ${subId} intent="${intent}" keywords=[${plan.keywords.join(",")}]`);
+    log(
+      `subscribe ${subId} intent="${intent}" keywords=[${plan.keywords.join(",")}] candidates=${candidates.length}`,
+    );
     return subId;
   }
 

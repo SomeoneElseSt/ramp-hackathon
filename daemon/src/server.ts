@@ -14,7 +14,7 @@ export async function startMcpServer(): Promise<void> {
     "Register interest in web events described in natural language (e.g. 'new messages'). Returns a subId used to wait for or drain events. Narrows which endpoints are inspected.",
     { intent: z.string(), types: z.array(z.string()).optional() },
     async ({ intent, types }) => {
-      const subId = perceiver.subscribe(intent, types);
+      const subId = await perceiver.subscribe(intent, types);
       return text({ subId });
     }
   );
