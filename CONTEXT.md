@@ -153,8 +153,8 @@ On recorder connect → send current `listeners` snapshot.
 - [x] Document listener context + RecorderControl in this file
 
 ### Next (us — backend + extension UX)
-- [ ] Finish `Subscription` fields (`pageUrl`, `endpoints`, `label`) end-to-end in perceive/MCP return
-- [ ] Bridge: track recorders; push `watch` / `unwatch` / `listeners`
+- [x] Finish `Subscription` fields (`pageUrl`, `endpoints`, `label`) end-to-end in perceive/MCP return
+- [x] Bridge: track recorders; push `watch` / `unwatch` / `listeners` (`test:control`)
 - [ ] Extension: handle control msgs; open/focus `pageUrl`; start watch scope
 - [ ] Popup: Tama branding + “watching this tab” + listener list
 - [ ] Live LinkedIn (or fixture) E2E with open-tab path

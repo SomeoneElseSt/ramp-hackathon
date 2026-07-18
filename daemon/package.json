@@ -13,7 +13,8 @@
     "start": "node dist/index.js",
     "test:recorder": "tsx test/fake-recorder.ts",
     "test:mcp": "tsx test/mcp-client.ts",
-    "test:tama": "tsx test/tama-hub.ts"
+    "test:tama": "tsx test/tama-hub.ts",
+    "test:control": "tsx test/recorder-control.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

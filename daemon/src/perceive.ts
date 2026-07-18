@@ -164,6 +164,11 @@ class Perceiver {
     return sub ? toWatch(sub) : null;
   }
 
+  /** All active watches — used for recorder sync on connect. */
+  listWatches(): ListenerWatch[] {
+    return [...this.subscriptions.values()].map(toWatch);
+  }
+
   hasSubscription(subId: string): boolean {
     return this.subscriptions.has(subId);
   }
