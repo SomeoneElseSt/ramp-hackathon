@@ -170,6 +170,7 @@ candidate identity (request-URL stamp fix landed).
 
 ### Next
 - [x] Popup: Tama ambient UI (daemon + listeners; capture demoted)
+- [x] Popup: Tamagotchi pet (`feat/popup-tamagotchi` — pet-widget in action popup)
 - [ ] Live E2E: `create_listener` → LinkedIn tab → ambient → `wait_for_event` on DM
 - [ ] Second module only when needed (same harness interface)
 - [ ] Popup: candidate shortlist / propose-workflow surface

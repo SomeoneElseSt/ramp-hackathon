@@ -1,48 +1,47 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
+    <title>Tama</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <header>
-      <h1>Tama</h1>
-      <span id="dot" class="dot idle" title="idle"></span>
-    </header>
-
-    <p id="tagline" class="tagline">Sits on your tabs. Builds listeners as you work.</p>
-
-    <div id="status" class="status">Checking…</div>
-
-    <section id="listenersBox" class="panel">
-      <h2>Active listeners</h2>
-      <ul id="listenerList" class="listener-list"></ul>
-      <p id="listenerEmpty" class="empty">None yet — keep working; MCP <code>create_listener</code> or discovery will show up here.</p>
-    </section>
-
-    <div class="row">
-      <button id="start" class="primary">Sit on this window</button>
-      <button id="stop" disabled>Pause ambient</button>
-    </div>
-
-    <details class="advanced">
-      <summary>Advanced capture</summary>
-      <fieldset id="scopeBox">
-        <legend>Scope</legend>
-        <label><input type="radio" name="scope" value="window" checked /> Current window</label>
-        <label><input type="radio" name="scope" value="tabs" /> Selected tabs</label>
-        <ul id="tabList" class="tablist hidden"></ul>
-      </fieldset>
-      <div class="row">
-        <button id="export">Export</button>
-        <button id="clear" class="danger">Clear buffer</button>
+    <div id="tamagent">
+      <div class="pet" id="pet" title="Tama">
+        <div class="screen"><canvas id="lcd" width="200" height="160"></canvas></div>
+        <div class="nub"><i></i><i></i><i></i></div>
       </div>
-    </details>
+      <div class="tag" id="tag">sleeping</div>
 
-    <p class="note">
-      Ambient capture stays local and streams to the daemon at
-      <code>ws://localhost:8787</code>. Agents wake on resolved events — not a HAR dump.
-    </p>
+      <div class="panel" id="panel">
+        <div>
+          <h4>Status</h4>
+          <div id="statusLine" class="muted" style="margin-top: 6px">Checking…</div>
+        </div>
+        <div>
+          <h4>Active listeners</h4>
+          <div id="listenerRows" style="margin-top: 6px"></div>
+          <div id="listenerEmpty" class="muted" style="margin-top: 5px">
+            None yet — MCP create_listener or browse to discover.
+          </div>
+        </div>
+        <div>
+          <h4>Recent events</h4>
+          <div id="events" style="margin-top: 6px"><div class="muted">nothing yet</div></div>
+        </div>
+        <div class="btn-col">
+          <button class="act" id="start">Sit on this window</button>
+          <button class="act ghost" id="stop" disabled>Pause ambient</button>
+        </div>
+        <details class="advanced">
+          <summary>Advanced capture</summary>
+          <div class="btn-col" style="margin-top: 8px">
+            <button class="act ghost" id="export">Export</button>
+            <button class="act ghost danger" id="clear">Clear buffer</button>
+          </div>
+        </details>
+      </div>
+    </div>
     <script type="module" src="popup.js"></script>
   </body>
 </html>
