@@ -124,6 +124,8 @@ export function createTabTracker({ onEvent, idFn, onAttach, onDetach }) {
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (!recording) return;
     upsertCtx(tab);
+    // Navigations wipe content scripts — allow re-attach + listening overlay.
+    if (changeInfo.url) onDetach(tabId);
     if (inScope(tab) && (changeInfo.status === "complete" || changeInfo.url)) {
       maybeAttach(tab);
     }

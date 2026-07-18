@@ -7,36 +7,43 @@
   </head>
   <body>
     <div id="tamagent">
-      <div class="pet" id="pet" title="Tama">
+      <header class="brand">
+        <span class="brand-mark">Tama</span>
+        <span class="brand-sub">ambient listen</span>
+      </header>
+
+      <div class="pet" id="pet" title="Tama — tap for details">
         <div class="screen"><canvas id="lcd" width="200" height="160"></canvas></div>
         <div class="nub"><i></i><i></i><i></i></div>
       </div>
       <div class="tag" id="tag">sleeping</div>
 
       <div class="panel" id="panel">
-        <div>
-          <h4>Status</h4>
-          <div id="statusLine" class="muted" style="margin-top: 6px">Checking…</div>
-        </div>
-        <div>
-          <h4>Active listeners</h4>
-          <div id="listenerRows" style="margin-top: 6px"></div>
-          <div id="listenerEmpty" class="muted" style="margin-top: 5px">
-            None yet — MCP create_listener or browse to discover.
-          </div>
-        </div>
-        <div>
-          <h4>Recent events</h4>
-          <div id="events" style="margin-top: 6px"><div class="muted">nothing yet</div></div>
-        </div>
+        <p id="statusLine" class="status">Checking…</p>
+
+        <section class="block">
+          <h4>Listeners</h4>
+          <div id="listenerRows"></div>
+          <p id="listenerEmpty" class="muted">
+            None yet — agents arm them via MCP.
+          </p>
+        </section>
+
+        <section class="block" id="eventsBlock">
+          <h4>Wake feed</h4>
+          <div id="events"><p class="muted">Quiet for now</p></div>
+        </section>
+
         <div class="btn-col">
           <button class="act" id="start">Sit on this window</button>
-          <button class="act ghost" id="stop" disabled>Pause ambient</button>
+          <button class="act ghost" id="stop" disabled>Pause</button>
         </div>
+
         <details class="advanced">
-          <summary>Advanced capture</summary>
-          <div class="btn-col" style="margin-top: 8px">
-            <button class="act ghost" id="export">Export</button>
+          <summary>Developer</summary>
+          <p class="muted adv-hint">Local buffer only — not the listen path.</p>
+          <div class="btn-col">
+            <button class="act ghost" id="export">Export HAR</button>
             <button class="act ghost danger" id="clear">Clear buffer</button>
           </div>
         </details>

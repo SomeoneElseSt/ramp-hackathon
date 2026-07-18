@@ -43,11 +43,11 @@ const H = 16;
 const LCD = "#9bbc0f";
 const INK = "#14300f";
 const LABEL = {
-  sleeping: "asleep · 0 model calls",
-  watching: "watching this tab",
-  happy: "new event",
-  distress: "capture error",
-  attention: "needs approval",
+  sleeping: "asleep · zero model calls",
+  watching: "listening",
+  happy: "woke on an event",
+  distress: "something broke",
+  attention: "needs you",
 };
 
 const lcd = document.getElementById("lcd");
@@ -156,11 +156,12 @@ function onSemanticEvent(ev) {
   const d = document.createElement("div");
   d.className = "ev";
   const from = ev.from || "someone";
-  const text = ev.text || "new message";
+  const text = ev.text || "new signal";
   d.innerHTML =
     `<b>${escapeHtml(from)}</b>` +
     `<span>${escapeHtml(text)} · ${new Date().toLocaleTimeString()}</span>`;
   eventsEl.prepend(d);
+  while (eventsEl.children.length > 4) eventsEl.lastChild.remove();
   holdHappyUntil = Date.now() + 5000;
   setState("happy", { buzz: true });
 }
@@ -185,18 +186,22 @@ async function render() {
 
   renderListeners(listening);
 
-  const daemonBit = connected ? "daemon live" : "daemon offline";
-  const ambientBit = ambientOn
-    ? `ambient on · ${nTabs} tab${nTabs === 1 ? "" : "s"}`
-    : "ambient off";
-  const listenBit =
-    listening.length > 0
-      ? ` · ${listening.length} listener${listening.length === 1 ? "" : "s"}`
-      : "";
-  statusLine.textContent = `${daemonBit} · ${ambientBit}${listenBit}`;
+  const parts = [];
+  parts.push(connected ? "Daemon live" : "Daemon offline");
+  if (ambientOn) {
+    parts.push(`sitting on ${nTabs} tab${nTabs === 1 ? "" : "s"}`);
+  } else {
+    parts.push("ambient off");
+  }
+  if (listening.length > 0) {
+    parts.push(`${listening.length} listener${listening.length === 1 ? "" : "s"}`);
+  }
+  statusLine.textContent = parts.join(" · ");
+  statusLine.className = "status" + (connected ? " ok" : " warn");
 
   startBtn.disabled = ambientOn;
   stopBtn.disabled = !ambientOn;
+  startBtn.textContent = ambientOn ? "Sitting…" : "Sit on this window";
 
   if (Date.now() < holdHappyUntil) return;
   // Daemon offline is not "failure detected" — SW WebSockets flap on MV3 wake.
@@ -247,7 +252,7 @@ exportBtn.onclick = async (e) => {
     alert("Export error: " + (err.message || err));
   } finally {
     exportBtn.disabled = false;
-    exportBtn.textContent = "Export";
+    exportBtn.textContent = "Export HAR";
   }
 };
 

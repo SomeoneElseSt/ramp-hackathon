@@ -320,21 +320,51 @@ const tabs = createTabTracker({
   onEvent: store,
   idFn,
   onAttach: async (tabId) => injectSensors(tabId),
-  onDetach: (tabId) => injectedTabs.delete(tabId),
+  onDetach: (tabId) => {
+    hideListeningOverlay(tabId);
+    injectedTabs.delete(tabId);
+  },
 });
 
 async function injectSensors(tabId) {
-  if (injectedTabs.has(tabId)) return;
+  const already = injectedTabs.has(tabId);
   try {
-    // MAIN-world network interceptor + isolated-world relay
-    await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/interceptor.js"], world: "MAIN" });
-    await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/relay.js"], world: "ISOLATED" });
-    // DOM interaction capture
-    await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/content-script.js"] });
-    injectedTabs.add(tabId);
+    if (!already) {
+      // MAIN-world network interceptor + isolated-world relay
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/interceptor.js"], world: "MAIN" });
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/relay.js"], world: "ISOLATED" });
+      // DOM interaction capture
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/content-script.js"] });
+      injectedTabs.add(tabId);
+    }
+    // Listening banner — always re-inject (page navigations wipe the DOM node)
+    await showListeningOverlay(tabId);
   } catch (_) {
     // restricted page (chrome://, store) — can't inject; skip
   }
+}
+
+/** Subtle top gradient: "Tama is listening on this tab" (pointer-events: none). */
+async function showListeningOverlay(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["src/content/listening-overlay.js"],
+    });
+    chrome.tabs.sendMessage(tabId, { type: "tama-overlay-show" }).catch(() => {});
+  } catch (_) {}
+}
+
+function hideListeningOverlay(tabId) {
+  chrome.tabs.sendMessage(tabId, { type: "tama-overlay-hide" }).catch(() => {});
+}
+
+function hideAllListeningOverlays() {
+  chrome.tabs.query({}, (all) => {
+    for (const t of all) {
+      if (t.id != null) hideListeningOverlay(t.id);
+    }
+  });
 }
 
 // ---- page-capture (debugger-free network capture via the MAIN-world interceptor)
@@ -439,6 +469,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.query({}, (all) => {
           for (const t of all) chrome.tabs.sendMessage(t.id, { type: "wf-stop" }).catch(() => {});
         });
+        hideAllListeningOverlays();
         syncKeepAliveAlarm();
         broadcast();
         sendResponse({ ok: true });

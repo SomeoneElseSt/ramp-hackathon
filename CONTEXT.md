@@ -4,7 +4,7 @@ Living notes on what this repo is, how the pieces fit, and what's done vs. next.
 **`CONTRACT.md` is the frozen source of truth for activity/semantic shapes and
 port `8787`.** This file is the map + build plan. Update it when you land something.
 
-Last updated: 2026-07-18 (landed on `master`).
+Last updated: 2026-07-18 (v0.4.2 listening overlay + popup polish on `master`).
 
 ---
 
@@ -140,7 +140,7 @@ candidate identity (request-URL stamp fix landed).
 | Path | Role | Status |
 |------|------|--------|
 | `daemon/` | Bridge · ingest · catalog · Tama MCP · watch | ✅ Hub + control + Unbrowse ingest + LinkedIn defaults |
-| `har-recorder/` | Ambient capture + **integration harness** | ✅ Capture→daemon; bg open/attach on `watch` |
+| `har-recorder/` | Ambient capture + **integration harness** | ✅ Capture→daemon; bg open/attach on `watch`; tab listening overlay (v0.4.2) |
 | `demo/` | Pet viewer | ✅ |
 | ~~`extension/`~~ | WXT | ❌ Deleted |
 
@@ -175,6 +175,7 @@ candidate identity (request-URL stamp fix landed).
 
 ### Next
 - [x] Popup: Tamagotchi pet (`feat/popup-tamagotchi` + `design/tama-popup` — pet shell/sprites/labels on ambient listen chrome; v0.4.1)
+- [x] Popup polish + **tab listening overlay** (v0.4.2): brand-first ambient UI; soft pink top gradient “Tama is listening on this tab” on watched tabs (`listening-overlay.js`); hide on Pause/unattach; HAR export demoted under Developer
 - [ ] Live DM wake test with user: ambient ON + oneshot/prolonged wait on a *new* LinkedIn message
 - [ ] Second module only when needed (same harness interface)
 - [ ] Popup: candidate shortlist / propose-workflow surface
@@ -192,7 +193,7 @@ candidate identity (request-URL stamp fix landed).
 ## Key facts
 
 - Port **8787** frozen. MCP logs → **stderr**.
-- Connection lifecycle: extension↔daemon WS stays live while watch/ambient (20s ping + reconnect; alarm backup); MCP stdio stays until client disconnect; listeners persist across `wait_for_event` cycles — idle only when both gone (or explicit unwatch/remove). Reload unpacked `har-recorder/` after pull.
+- Connection lifecycle: extension↔daemon WS stays live while watch/ambient (20s ping + reconnect; alarm backup); MCP stdio stays until client disconnect; listeners persist across `wait_for_event` cycles — idle only when both gone (or explicit unwatch/remove). Reload unpacked `har-recorder/` after pull (v0.4.2+ for listening overlay).
 - Activity `{ id, type, ts, tabId, url, data }`; semantic `{ type, from, text, evidence[] }`.
 - Redaction OFF (MVP) for bodies — filter **volume**, don’t strip signal yet.
 - One extension: `har-recorder/`. Modules: `har-recorder/src/integrations/`.
