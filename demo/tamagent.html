@@ -140,36 +140,38 @@ const CFG = {
 
 // --- 1-bit pixel sprites (16x16), 'X' = pixel on --------------------------
 const CAT = {
+  // 16x16 cat FACE. Filled head with negative-space eyes: a full-body cat
+  // needs 24x24+ to read, and at LCD size the outline version was a blob.
   idle:[
-    "................","..XX........XX..","..XXX......XXX..","..XXXXXXXXXXXX..",
-    "..X..........X..",".XX..XX..XX..XX.",".X............X.",".X....XXXX....X.",
-    ".X...X....X...X.","..XXXXXXXXXXXX..","...X........X...","...X........X...",
-    "...X........X...","...XXXXXXXXXX...","...X.X....X.X...","................"],
+    "................","..X..........X..","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..",".XXXXXXXXXXXXXX.",".XXX..XXXX..XXX.",".XXX..XXXX..XXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
   idle2:[
-    "................","................","..XX........XX..","..XXX......XXX..",
-    "..XXXXXXXXXXXX..","..X..........X..",".XX..XX..XX..XX.",".X............X.",
-    ".X....XXXX....X.",".X...X....X...X.","..XXXXXXXXXXXX..","...X........X...",
-    "...X........X...","...XXXXXXXXXX...","...X.X....X.X...","................"],
+    "................","..X..........X..","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..",".XXXXXXXXXXXXXX.",".XXXXXXXXXXXXXX.",".XXX..XXXX..XXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
   asleep:[
-    "................","................","..XX........XX..","..XXX......XXX..",
-    "..XXXXXXXXXXXX..","..X..........X..",".XX.XXX..XXX.XX.",".X............X.",
-    ".X.....XX.....X.","..XXXXXXXXXXXX..","...X........X...","...X........X...",
-    "...XXXXXXXXXX...","...X.X....X.X...","................","................"],
+    "................","..X..........X..","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..",".XXXXXXXXXXXXXX.",".XXXXXXXXXXXXXX.",".XXX..XXXX..XXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
   alert:[
     "..X..........X..","..XX........XX..","..XXX......XXX..","..XXXXXXXXXXXX..",
-    "..X..........X..",".XX.XXX..XXX.XX.",".X..X.X..X.X..X.",".X..XXX..XXX..X.",
-    ".X.....XX.....X.","..XXXXXXXXXXXX..","...X........X...","...X........X...",
-    "...X........X...","...XXXXXXXXXX...","..X.X......X.X..","................"],
+    ".XXXXXXXXXXXXXX.",".XXX..XXXX..XXX.",".XXX..XXXX..XXX.",".XXX..XXXX..XXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
   alarmed:[
-    "................","..XX........XX..","..XXX......XXX..","..XXXXXXXXXXXX..",
-    "..X..........X..",".XX.X.X..X.X.XX.",".X...X....X...X.",".X..X.X..X.X..X.",
-    ".X....XXXX....X.","..XXXXXXXXXXXX..","...X........X...","...X........X...",
-    "...X........X...","...XXXXXXXXXX...","...X.X....X.X...","................"],
+    "................","..X..........X..","..XX........XX..","..XXX......XXX..",
+    "..XXXXXXXXXXXX..",".XXXXXXXXXXXXXX.",".XXX.XXXXXX.XXX.",".XXXX.XXXX.XXXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
   drained:[
     "................","................","..X..........X..","..XX........XX..",
-    "..XXXXXXXXXXXX..","..X..........X..",".XX.XXX..XXX.XX.",".X..XXX..XXX..X.",
-    ".X............X.",".X....XXXX....X.","..XXXXXXXXXXXX..","...X........X...",
-    "...X........X...","...XXXXXXXXXX...","...X.X....X.X...","................"],
+    "..XXXXXXXXXXXX..",".XXXXXXXXXXXXXX.",".XXXXXXXXXXXXXX.",".XXX..XXXX..XXX.",
+    "XXXXXXXXXXXXXXXX",".XXXXX.XX.XXXXX.",".XXXXXXXXXXXXXX.","..XXXXXXXXXXXX..",
+    "...XXXXXXXXXX...","................","................","................"],
 };
 const HEART_FULL=[".X.X.","XXXXX","XXXXX",".XXX.","..X.."];
 const HEART_EMPTY=[".X.X.","X...X","X...X",".X.X.","..X.."];
