@@ -139,14 +139,47 @@ function ctxOf(sender) {
 function pageCaptureToEvents(rec, ctx) {
   if (rec.kind === "http") {
     const rid = idFn();
+    const url = absoluteUrl(rec.url, ctx.url);
+    const method = rec.method || "GET";
     return [
-      N.networkRequest(idFn, { ts: rec.ts, requestId: rid, method: rec.method || "GET", url: rec.url, resourceType: "Fetch", headers: {}, initiator: {} }, ctx),
-      N.networkResponse(idFn, { ts: rec.ts, requestId: rid, status: rec.status ?? 0, mimeType: rec.ct || "", headers: {} }, ctx, rec.body ? { text: rec.body, base64Encoded: false, mimeType: rec.ct || "" } : null),
+      N.networkRequest(
+        idFn,
+        { ts: rec.ts, requestId: rid, method, url, resourceType: "Fetch", headers: {}, initiator: {} },
+        ctx,
+      ),
+      N.networkResponse(
+        idFn,
+        {
+          ts: rec.ts,
+          requestId: rid,
+          method,
+          url,
+          status: rec.status ?? 0,
+          mimeType: rec.ct || "",
+          resourceType: "Fetch",
+          headers: {},
+        },
+        ctx,
+        rec.body ? { text: rec.body, base64Encoded: false, mimeType: rec.ct || "" } : null,
+      ),
     ];
   }
-  if (rec.kind === "sse") return [N.sseMessage(idFn, { ts: rec.ts, requestId: null, url: rec.url, data: rec.data }, ctx)];
-  if (rec.kind === "ws") return [N.webSocketFrame(idFn, { ts: rec.ts, direction: rec.dir, payload: rec.data }, ctx)];
+  if (rec.kind === "sse") {
+    return [N.sseMessage(idFn, { ts: rec.ts, requestId: null, url: absoluteUrl(rec.url, ctx.url), data: rec.data }, ctx)];
+  }
+  if (rec.kind === "ws") {
+    return [N.webSocketFrame(idFn, { ts: rec.ts, direction: rec.dir, payload: rec.data, requestId: null }, ctx)];
+  }
   return [];
+}
+
+function absoluteUrl(url, base) {
+  if (!url) return url;
+  try {
+    return new URL(url, base || undefined).href;
+  } catch {
+    return url;
+  }
 }
 
 // ---- content-script DOM events + page captures -----------------------------
