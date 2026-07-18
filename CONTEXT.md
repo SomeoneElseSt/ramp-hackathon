@@ -174,6 +174,7 @@ candidate identity (request-URL stamp fix landed).
 - [x] **Listeners are event-forward from arm time** — `sinceTs` watermark on `create_listener`; `wait_for_event` ignores `ts < sinceTs`; drain pending on arm (not a history scrape). Old Hi/Sup never wake.
 
 ### Next
+- [x] Popup: Tamagotchi pet (`feat/popup-tamagotchi` — pet-widget in action popup; ambient listen chrome kept)
 - [ ] Live DM wake test with user: ambient ON + oneshot/prolonged wait on a *new* LinkedIn message
 - [ ] Second module only when needed (same harness interface)
 - [ ] Popup: candidate shortlist / propose-workflow surface
