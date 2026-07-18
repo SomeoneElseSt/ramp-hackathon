@@ -1,34 +1,39 @@
-# reflex, 90-second demo script
+# TamaAgent, 90-second demo script
 
-**Format**: science fair, at your station. One laptop, two windows, cost counter on each.
+**Format**: science fair, at your station. One laptop, `demo/tamagent.html` fullscreen: two Tamagotchi pets side by side, one per agent.
 **Rule**: start the demo immediately. Speak while demoing. Never explain before showing.
 
 **Pre-demo setup (do this before a judge walks up):**
-- Left window: screenshot agent already running, already polling, counter already ticking. It should have visible burn on the clock when they arrive.
-- Right window: Reflex agent already subscribed and idling at ~$0.00.
+- `demo/tamagent.html` open fullscreen. Badge must read **LIVE**, never `SIM`.
+- Left pet (POLLER): already running, hearts already visibly drained, tokens already high. It should look tired when they arrive.
+- Right pet (TAMAAGENT): asleep, hearts full, $0.00.
 - Teammate on standby with the DM ready to send. Rehearse the hand signal.
 
 ---
 
 ## The script
 
-**0:00 to 0:12 — hook, while pointing at the left window**
+**0:00 to 0:12 — hook, while pointing at the left pet**
 
-> "This agent is watching a LinkedIn inbox for a new message. To do that, it screenshots the page every 60 seconds and runs a vision model on it. It's been doing that for four minutes. It has burned [X] tokens and it still doesn't know anything happened."
+> "Both of these pets are watching the same LinkedIn inbox. This one belongs to a normal browser agent. To check for a message it screenshots the page every 60 seconds and runs a vision model on it. That's why it's exhausted. Its energy is its token spend, and it's burned [X] and still doesn't know anything happened."
 
 **0:12 to 0:30 — the contrast, point right**
 
-> "This one is doing the exact same job. It's subscribed to the page and it's idle. Zero screenshots. Zero tokens while nothing is happening. It's waiting on an actual event, not a timer."
+> "This one is doing the exact same job. It's subscribed to the page, so it's asleep. Full energy. Zero screenshots, zero tokens while nothing is happening. It's waiting on an actual event, not a timer."
 
 **0:30 to 0:45 — the moment (signal your teammate NOW)**
 
 > "Watch."
 
-*[teammate sends the DM live]*
+*[teammate sends the DM live. The right pet snaps awake instantly. The left pet keeps sleeping.]*
 
-> "That fired in under a second. And look at what it got: the sender's name, the thread, the text, already resolved. It didn't read a screenshot. The page told it."
+> "Woke up in under a second, with the sender's name and the message already resolved. It didn't read a screenshot, the page told it. And look at the other one. Still asleep. It has no idea."
 
-**0:45 to 1:05 — the number, point at both counters**
+*[wait for the poller's next tick, then point]*
+
+> "There. Forty-three seconds late, and look at its energy."
+
+**0:45 to 1:05 — the number, point at both stat rows**
 
 > "Same task. [X] tokens versus [Y]. [X] dollars versus [Y]. Sixty seconds of lag versus one. The reason is that we gave the agent a modality it doesn't normally have: the network and event layer the browser is already emitting. Everyone builds agents that look at pages. Almost nobody listens to them."
 
