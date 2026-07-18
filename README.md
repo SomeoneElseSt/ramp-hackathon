@@ -8,6 +8,10 @@ A new modality for AI agents: instead of taking a screenshot every minute to che
 
 ---
 
+![TamaAgent: a polling agent versus Tama, side by side](docs/images/comparison.png)
+
+*Same job, same inbox. The polling agent burned 2,200 tokens and still noticed late. Tama slept at ~zero cost and woke in 0.8s.*
+
 ## The Problem
 
 Today's browser agents are **blind pollers**. To know if a LinkedIn DM arrived, an agent opens the page, screenshots it, runs a vision model, and repeats. Every minute. All day.
@@ -289,6 +293,23 @@ Extension exports (offline analysis):
 | `activity-summary.json` | Compact, noise-filtered timeline grouped around user actions |
 
 ---
+
+## What it looks like
+
+### The pet, in the extension popup
+The pet reflects the recorder's real state. It is never awake for show: asleep when nothing is being watched, awake only when something actually fired.
+
+![Tama popup with the pet and recording controls](docs/images/popup.png)
+
+### Ambient, on every page
+A corner pet that persists across tab switches, rendered in a Shadow DOM so no site's CSS can restyle it. Click to dismiss.
+
+![Tama pet pinned to the corner of a page](docs/images/overlay.png)
+
+### The dashboard, in a Chrome side panel
+A side panel rather than a popup, so it stays open while you work. Every number is measured from the daemon's live viewer stream, nothing is hardcoded: raw events seen, how many survived the noise gate, and how many became resolved semantic events.
+
+![Tama side panel showing the perception funnel, activity by host, and the event feed](docs/images/dashboard.png)
 
 ## The demo
 
