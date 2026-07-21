@@ -10,9 +10,12 @@
     "downloads",
     "scripting",
     "webNavigation",
-    "alarms"
+    "alarms",
+    "sidePanel"
   ],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "src/background/index.js",
     "type": "module"
@@ -34,5 +37,23 @@
   "action": {
     "default_title": "Tama",
     "default_popup": "src/popup/popup.html"
-  }
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "exclude_matches": [
+        "*://*/*.pdf"
+      ],
+      "js": [
+        "src/content/pet-overlay.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
 }
